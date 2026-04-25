@@ -96,9 +96,12 @@ class ReconWorker(QThread):
         old_stdout = sys.stdout
         sys.stdout = io.StringIO()
         try:
-            from ghostlink.network.recon import full_network_recon, print_recon_result
-            result = full_network_recon()
-            print_recon_result(result)
+            if self.module_func:
+                self.module_func()
+            else:
+                from ghostlink.network.recon import full_network_recon, print_recon_result
+                result = full_network_recon()
+                print_recon_result(result)
             captured = sys.stdout.getvalue()
             sys.stdout = old_stdout
             self.output.emit(captured)
