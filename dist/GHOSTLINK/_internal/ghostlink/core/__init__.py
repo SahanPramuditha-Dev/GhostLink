@@ -1,0 +1,1 @@
+"""GHOSTLINK Core Module"""
