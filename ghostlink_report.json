@@ -1,9 +1,9 @@
 {
   "tool": "GHOSTLINK",
   "version": "1.0.0",
-  "timestamp": "2026-04-25T05:53:02.738309",
+  "timestamp": "2026-04-25T16:30:56.290972",
   "target": {
-    "ssid": "MST Server",
+    "ssid": "Lucifer",
     "security": "Unknown"
   },
   "attack": {
@@ -14,10 +14,10 @@
     "wordlist": "None"
   },
   "result": {
-    "password": "00000018",
-    "attempts": 19,
-    "elapsed_seconds": 246.25,
-    "speed": 0.08,
+    "password": "00000001",
+    "attempts": 2,
+    "elapsed_seconds": 18.66,
+    "speed": 0.11,
     "verified": true
   }
 }
