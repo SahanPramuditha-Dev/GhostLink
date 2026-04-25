@@ -40,14 +40,19 @@ class WiFiScanner:
     @staticmethod
     def _scan_windows(interface: Optional[str] = None) -> List[ScanResult]:
         """Windows network scanning"""
+        # Build the command correctly – always use mode=bssid
         cmd = ["netsh", "wlan", "show", "networks", "mode=Bssid"]
         if interface:
-            cmd += ["interface", interface]
+            # Proper way to pass interface name to netsh
+            cmd.append(f'interface="{interface}"')
         
         res = run_cmd(cmd, timeout=15)
         if res.returncode != 0:
-            print(f"[!] Scan failed: {res.stderr.strip()[:200]}")
-            return []
+            error_msg = res.stderr.strip() or res.stdout.strip() or "Unknown error (no output)"
+            raise RuntimeError(
+                f"Wi‑Fi scan failed.\n\n{error_msg}\n\n"
+                "Run as Administrator and ensure Wi‑Fi is enabled."
+            )
         
         networks = []
         current: Optional[ScanResult] = None
@@ -58,10 +63,11 @@ class WiFiScanner:
                 current = None
                 continue
             
+            # Detect a new SSID line
             if line.lower().startswith("ssid") and "bssid" not in line.lower():
                 try:
                     ssid = line.split(":", 1)[1].strip()
-                    if ssid:
+                    if ssid:   # only add non-empty SSIDs
                         current = ScanResult(
                             ssid=ssid, bssid="", signal=0,
                             security="Unknown", hidden=False,
@@ -80,9 +86,17 @@ class WiFiScanner:
                         current.security = line.split(":", 1)[1].strip()
                     elif "bssid" in line.lower():
                         current.bssid = line.split(":", 1)[1].strip()
+                    elif "channel" in line.lower():
+                        match = re.search(r"(\d+)", line)
+                        if match:
+                            current.channel = int(match.group(1))
+                    elif "radio type" in line.lower():
+                        # not stored, but could be
+                        pass
                 except:
                     pass
         
+        # Sort by signal strength descending
         return sorted(networks, key=lambda x: x.signal, reverse=True)
     
     @staticmethod

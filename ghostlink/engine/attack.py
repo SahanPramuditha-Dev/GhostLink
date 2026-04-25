@@ -38,11 +38,15 @@ class AttackState:
                         self.speed = self.attempts / elapsed
 
 
+# ── Shared global state for the GUI to monitor ─────────────
+shared_state = AttackState()
+
+
 class BruteForceEngine:
     def __init__(self, config: Dict, vault: PasswordVault):
         self.config = config
         self.vault = vault
-        self.state = AttackState()
+        self.state = shared_state   # use the module‑level instance so the GUI can see it
         self.stop_flag = threading.Event()
         self.connector = WiFiConnector()
         self.conn_lock = threading.Lock()       # serialise all connection attempts
