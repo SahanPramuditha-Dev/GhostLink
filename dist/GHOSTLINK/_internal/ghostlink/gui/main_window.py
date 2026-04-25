@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QTabWidget,
     QWidget,
+    QDialog,
     QVBoxLayout,
     QHBoxLayout,
     QPushButton,
@@ -43,6 +44,157 @@ from ghostlink.core.constants import (
 )
 
 from .workers import ScanWorker, AttackWorker, ReconWorker
+
+
+class CompromisedDialog(QDialog):
+    def __init__(self, parent, ssid: str, password: str, attempts: int, elapsed: float):
+        super().__init__(parent)
+        self.setObjectName("compromisedDialog")
+        self.setModal(True)
+        self.setWindowTitle("Target Compromised")
+        self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
+        self.setFixedSize(430, 300)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        header = QFrame()
+        header.setProperty("role", "popup_header")
+        hl = QHBoxLayout(header)
+        hl.setContentsMargins(16, 12, 16, 12)
+        hl.setSpacing(10)
+
+        icon = QLabel("✓")
+        icon.setProperty("role", "popup_icon")
+        title = QLabel("Target Compromised")
+        title.setProperty("role", "popup_title")
+        subtitle = QLabel("Password verified and connection unlocked")
+        subtitle.setProperty("role", "popup_subtitle")
+        title_wrap = QVBoxLayout()
+        title_wrap.setSpacing(1)
+        title_wrap.addWidget(title)
+        title_wrap.addWidget(subtitle)
+
+        hl.addWidget(icon)
+        hl.addLayout(title_wrap, 1)
+        root.addWidget(header)
+
+        body = QFrame()
+        body.setProperty("role", "popup_body")
+        bl = QVBoxLayout(body)
+        bl.setContentsMargins(18, 14, 18, 10)
+        bl.setSpacing(10)
+
+        lead = QLabel("Password Found")
+        lead.setProperty("role", "popup_lead")
+        bl.addWidget(lead)
+
+        details = QFrame()
+        details.setProperty("role", "popup_card")
+        dl = QVBoxLayout(details)
+        dl.setContentsMargins(14, 12, 14, 12)
+        dl.setSpacing(8)
+        dl.addWidget(self._row("SSID", ssid))
+        dl.addWidget(self._row("Password", password))
+        dl.addWidget(self._row("Attempts", f"{attempts:,}"))
+        dl.addWidget(self._row("Time", f"{elapsed:.1f}s"))
+        bl.addWidget(details)
+        bl.addStretch()
+
+        actions = QHBoxLayout()
+        actions.addStretch()
+        ok_btn = QPushButton("CLOSE")
+        ok_btn.setProperty("role", "popup_btn")
+        ok_btn.setCursor(Qt.PointingHandCursor)
+        ok_btn.clicked.connect(self.accept)
+        actions.addWidget(ok_btn)
+        bl.addLayout(actions)
+        root.addWidget(body)
+
+        self.setStyleSheet("""
+        QDialog#compromisedDialog {
+            background: #051225;
+            border: 1px solid #1b4f80;
+            border-radius: 12px;
+        }
+        QFrame[role="popup_header"] {
+            background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #072344, stop:1 #0c345f);
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;
+            border-bottom: 1px solid #1f5f99;
+        }
+        QLabel[role="popup_icon"] {
+            background: #0ea5ff;
+            border: 2px solid #65cdff;
+            border-radius: 15px;
+            color: #ffffff;
+            font-size: 12pt;
+            font-weight: 900;
+            min-width: 30px;
+            min-height: 30px;
+            max-width: 30px;
+            max-height: 30px;
+            qproperty-alignment: AlignCenter;
+        }
+        QLabel[role="popup_title"] {
+            color: #f0f8ff;
+            font-size: 12pt;
+            font-weight: 800;
+        }
+        QLabel[role="popup_subtitle"] {
+            color: #8ec8f8;
+            font-size: 9pt;
+        }
+        QFrame[role="popup_body"] { background: #06172e; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
+        QLabel[role="popup_lead"] {
+            color: #7de2b3;
+            font-size: 12pt;
+            font-weight: 800;
+            letter-spacing: 0.4px;
+        }
+        QFrame[role="popup_card"] {
+            background: #0a223f;
+            border: 1px solid #24598c;
+            border-radius: 9px;
+        }
+        QLabel[role="popup_key"] {
+            color: #84b8e1;
+            font-size: 9.2pt;
+            font-weight: 700;
+            min-width: 78px;
+        }
+        QLabel[role="popup_val"] {
+            color: #f4fbff;
+            font-size: 10.2pt;
+            font-weight: 600;
+        }
+        QPushButton[role="popup_btn"] {
+            background: #0f5fa9;
+            border: 1px solid #62bbff;
+            border-radius: 8px;
+            color: #f7fcff;
+            padding: 8px 16px;
+            font-weight: 800;
+            min-width: 90px;
+        }
+        QPushButton[role="popup_btn"]:hover { background: #1675cc; }
+        QPushButton[role="popup_btn"]:pressed { background: #0d4c86; }
+        """)
+
+    def _row(self, key: str, value: str) -> QWidget:
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        k = QLabel(f"{key}:")
+        v = QLabel(str(value))
+        k.setProperty("role", "popup_key")
+        v.setProperty("role", "popup_val")
+        v.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        layout.addWidget(k)
+        layout.addWidget(v, 1)
+        return row
 
 
 class MainWindow(QMainWindow):
@@ -459,8 +611,8 @@ class MainWindow(QMainWindow):
         else:
             self.progress_percent_label.setText(f"Progress: {self.progress_bar.value()}%")
         if password and verified:
-            QMessageBox.information(self, "Target Compromised",
-                f"Password Found!\n\nSSID: {self.config['ssid']}\nPassword: {password}\nAttempts: {attempts}\nTime: {elapsed:.1f}s")
+            dlg = CompromisedDialog(self, self.config.get("ssid") or "Unknown", password, attempts, elapsed)
+            dlg.exec()
             self.statusBar().showMessage("Attack complete: password verified")
         else:
             QMessageBox.information(self, "Attack Complete", "Password not found within search space.")

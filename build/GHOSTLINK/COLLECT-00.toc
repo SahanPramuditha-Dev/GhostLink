@@ -447,6 +447,9 @@
    'C:\\D\\Projects\\Python\\Wifi '
    'Hacker\\GhostLink\\build\\GHOSTLINK\\base_library.zip',
    'DATA'),
+  ('ghostlink\\.gitignore',
+   'C:\\D\\Projects\\Python\\Wifi Hacker\\GhostLink\\ghostlink\\.gitignore',
+   'DATA'),
   ('ghostlink\\__init__.py',
    'C:\\D\\Projects\\Python\\Wifi Hacker\\GhostLink\\ghostlink\\__init__.py',
    'DATA'),
