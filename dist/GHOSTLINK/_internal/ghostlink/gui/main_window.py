@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import os
 import ctypes
 import io
@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QTabWidget,
     QWidget,
-    QDialog,
     QVBoxLayout,
     QHBoxLayout,
     QPushButton,
@@ -31,6 +30,9 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QHeaderView,
     QFrame,
+    QSplitter,
+    QScrollArea,
+    QApplication,
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QTextCursor
@@ -44,157 +46,7 @@ from ghostlink.core.constants import (
 )
 
 from .workers import ScanWorker, AttackWorker, ReconWorker
-
-
-class CompromisedDialog(QDialog):
-    def __init__(self, parent, ssid: str, password: str, attempts: int, elapsed: float):
-        super().__init__(parent)
-        self.setObjectName("compromisedDialog")
-        self.setModal(True)
-        self.setWindowTitle("Target Compromised")
-        self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
-        self.setFixedSize(430, 300)
-
-        root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
-
-        header = QFrame()
-        header.setProperty("role", "popup_header")
-        hl = QHBoxLayout(header)
-        hl.setContentsMargins(16, 12, 16, 12)
-        hl.setSpacing(10)
-
-        icon = QLabel("✓")
-        icon.setProperty("role", "popup_icon")
-        title = QLabel("Target Compromised")
-        title.setProperty("role", "popup_title")
-        subtitle = QLabel("Password verified and connection unlocked")
-        subtitle.setProperty("role", "popup_subtitle")
-        title_wrap = QVBoxLayout()
-        title_wrap.setSpacing(1)
-        title_wrap.addWidget(title)
-        title_wrap.addWidget(subtitle)
-
-        hl.addWidget(icon)
-        hl.addLayout(title_wrap, 1)
-        root.addWidget(header)
-
-        body = QFrame()
-        body.setProperty("role", "popup_body")
-        bl = QVBoxLayout(body)
-        bl.setContentsMargins(18, 14, 18, 10)
-        bl.setSpacing(10)
-
-        lead = QLabel("Password Found")
-        lead.setProperty("role", "popup_lead")
-        bl.addWidget(lead)
-
-        details = QFrame()
-        details.setProperty("role", "popup_card")
-        dl = QVBoxLayout(details)
-        dl.setContentsMargins(14, 12, 14, 12)
-        dl.setSpacing(8)
-        dl.addWidget(self._row("SSID", ssid))
-        dl.addWidget(self._row("Password", password))
-        dl.addWidget(self._row("Attempts", f"{attempts:,}"))
-        dl.addWidget(self._row("Time", f"{elapsed:.1f}s"))
-        bl.addWidget(details)
-        bl.addStretch()
-
-        actions = QHBoxLayout()
-        actions.addStretch()
-        ok_btn = QPushButton("CLOSE")
-        ok_btn.setProperty("role", "popup_btn")
-        ok_btn.setCursor(Qt.PointingHandCursor)
-        ok_btn.clicked.connect(self.accept)
-        actions.addWidget(ok_btn)
-        bl.addLayout(actions)
-        root.addWidget(body)
-
-        self.setStyleSheet("""
-        QDialog#compromisedDialog {
-            background: #051225;
-            border: 1px solid #1b4f80;
-            border-radius: 12px;
-        }
-        QFrame[role="popup_header"] {
-            background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #072344, stop:1 #0c345f);
-            border-top-left-radius: 12px;
-            border-top-right-radius: 12px;
-            border-bottom: 1px solid #1f5f99;
-        }
-        QLabel[role="popup_icon"] {
-            background: #0ea5ff;
-            border: 2px solid #65cdff;
-            border-radius: 15px;
-            color: #ffffff;
-            font-size: 12pt;
-            font-weight: 900;
-            min-width: 30px;
-            min-height: 30px;
-            max-width: 30px;
-            max-height: 30px;
-            qproperty-alignment: AlignCenter;
-        }
-        QLabel[role="popup_title"] {
-            color: #f0f8ff;
-            font-size: 12pt;
-            font-weight: 800;
-        }
-        QLabel[role="popup_subtitle"] {
-            color: #8ec8f8;
-            font-size: 9pt;
-        }
-        QFrame[role="popup_body"] { background: #06172e; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
-        QLabel[role="popup_lead"] {
-            color: #7de2b3;
-            font-size: 12pt;
-            font-weight: 800;
-            letter-spacing: 0.4px;
-        }
-        QFrame[role="popup_card"] {
-            background: #0a223f;
-            border: 1px solid #24598c;
-            border-radius: 9px;
-        }
-        QLabel[role="popup_key"] {
-            color: #84b8e1;
-            font-size: 9.2pt;
-            font-weight: 700;
-            min-width: 78px;
-        }
-        QLabel[role="popup_val"] {
-            color: #f4fbff;
-            font-size: 10.2pt;
-            font-weight: 600;
-        }
-        QPushButton[role="popup_btn"] {
-            background: #0f5fa9;
-            border: 1px solid #62bbff;
-            border-radius: 8px;
-            color: #f7fcff;
-            padding: 8px 16px;
-            font-weight: 800;
-            min-width: 90px;
-        }
-        QPushButton[role="popup_btn"]:hover { background: #1675cc; }
-        QPushButton[role="popup_btn"]:pressed { background: #0d4c86; }
-        """)
-
-    def _row(self, key: str, value: str) -> QWidget:
-        row = QWidget()
-        layout = QHBoxLayout(row)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
-        k = QLabel(f"{key}:")
-        v = QLabel(str(value))
-        k.setProperty("role", "popup_key")
-        v.setProperty("role", "popup_val")
-        v.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        layout.addWidget(k)
-        layout.addWidget(v, 1)
-        return row
+from PySide6.QtGui import QIcon
 
 
 class MainWindow(QMainWindow):
@@ -204,6 +56,7 @@ class MainWindow(QMainWindow):
         self.resize(1240, 840)
         self.setMinimumSize(1080, 720)
         self.setFont(QFont("Segoe UI", 10))
+        self.setWindowIcon(QIcon("ghostlink.ico"))
 
         self.scan_results = []
         self.config = {
@@ -220,6 +73,9 @@ class MainWindow(QMainWindow):
 
         self.attack_worker = None
         self.total_combinations = 0
+        self._recon_records: list[dict] = []
+        self._recon_filter_mode = "all"
+        self._recon_collapse_sections = False
 
         shell = QWidget()
         shell_layout = QVBoxLayout(shell)
@@ -243,9 +99,9 @@ class MainWindow(QMainWindow):
         self.apply_theme()
         self.statusBar().showMessage("System ready")
 
-    # ──────────────────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Chrome bar
-    # ──────────────────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def create_chrome_bar(self) -> QWidget:
         bar = QFrame()
@@ -254,9 +110,9 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(14, 8, 14, 8)
         layout.setSpacing(8)
 
-        dot_red    = QLabel("●"); dot_red.setProperty("role", "dot_red")
-        dot_yellow = QLabel("●"); dot_yellow.setProperty("role", "dot_yellow")
-        dot_green  = QLabel("●"); dot_green.setProperty("role", "dot_green")
+        dot_red    = QLabel("o"); dot_red.setProperty("role", "dot_red")
+        dot_yellow = QLabel("o"); dot_yellow.setProperty("role", "dot_yellow")
+        dot_green  = QLabel("o"); dot_green.setProperty("role", "dot_green")
         title      = QLabel("G H O S T L I N K"); title.setProperty("role", "chrome_title")
         version    = QLabel("Wi-Fi Security Framework // v2.1.0"); version.setProperty("role", "chrome_meta")
 
@@ -267,15 +123,15 @@ class MainWindow(QMainWindow):
     def make_tab_header(self, title: str, subtitle: str) -> QWidget:
         container = QWidget()
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 2); layout.setSpacing(4)
+        layout.setContentsMargins(0, 0, 0, 2); layout.setSpacing(2)
         t = QLabel(title);    t.setProperty("role", "title")
         s = QLabel(subtitle); s.setProperty("role", "subtitle")
         layout.addWidget(t); layout.addWidget(s)
         return container
 
-    # ──────────────────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Theme
-    # ──────────────────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def apply_theme(self):
         self.setStyleSheet("""
@@ -331,6 +187,33 @@ class MainWindow(QMainWindow):
             background: #0c2542; color: #4b95d5; border: none;
             border-bottom: 1px solid #1a4671; padding: 8px; font-weight: 700; letter-spacing: 1px;
         }
+        QTableWidget[role="scan_table"] {
+            background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #071b33, stop:1 #041428);
+            border: 1px solid #1f5887;
+            border-radius: 10px;
+            gridline-color: #113b61;
+            alternate-background-color: #081d36;
+            selection-background-color: #123e68;
+            selection-color: #f6fcff;
+            padding: 2px;
+        }
+        QTableWidget[role="scan_table"]::item {
+            border-bottom: 1px solid #0f3759;
+            padding: 8px 8px;
+        }
+        QTableWidget[role="scan_table"]::item:selected {
+            border-left: 3px solid #39b4ff;
+            background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #123e68, stop:1 #1f5f95);
+        }
+        QTableWidget[role="scan_table"] QHeaderView::section {
+            background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #0d2f55, stop:1 #0a2340);
+            color: #72bbff;
+            border: none;
+            border-bottom: 1px solid #2b6a9c;
+            padding: 12px 10px;
+            font-weight: 800;
+            letter-spacing: 2px;
+        }
         QLineEdit, QSpinBox, QComboBox {
             background: #081a30; border: 1px solid #255785; border-radius: 8px;
             color: #eff8ff; padding: 6px 8px; min-height: 20px;
@@ -365,17 +248,135 @@ class MainWindow(QMainWindow):
             border-radius: 7px;
             background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #00b8ff, stop:1 #09de9a);
         }
+        QSplitter::handle {
+            background: #0f2d4a;
+        }
+        QSplitter::handle:horizontal {
+            width: 6px;
+            background: #0f2d4a;
+            border-left: 1px solid #1a4671;
+            border-right: 1px solid #1a4671;
+        }
+        QSplitter::handle:vertical {
+            height: 6px;
+            background: #0f2d4a;
+            border-top: 1px solid #1a4671;
+            border-bottom: 1px solid #1a4671;
+        }
+        QSplitter::handle:hover {
+            background: #1a4671;
+        }
+        QScrollArea { border: none; background: transparent; }
+        QScrollBar:vertical {
+            background: #061426; width: 8px; border-radius: 4px;
+        }
+        QScrollBar::handle:vertical {
+            background: #1e4d79; border-radius: 4px; min-height: 24px;
+        }
+        QScrollBar::handle:vertical:hover { background: #2a6aaa; }
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
         QFrame[role="recon_running"] {
             background: #030f1f;
             border: 1px solid rgba(0, 184, 255, 0.25);
             border-left: 3px solid #00b8ff;
             border-radius: 8px;
         }
+        QFrame[role="recon_sidebar"] {
+            background: #031224;
+            border: 1px solid #1b456f;
+            border-radius: 9px;
+        }
+        QFrame[role="recon_output_frame"] {
+            background: #071930;
+            border: 1px solid #1f4d79;
+            border-radius: 8px;
+        }
+        QFrame[role="recon_summary"] {
+            background: #04111f;
+            border: 1px solid #0f2d47;
+            border-radius: 7px;
+        }
+        QLabel[role="summary_card"] {
+            background: #061b30;
+            border: 1px solid #1e4d79;
+            border-radius: 6px;
+            color: #d9eeff;
+            font-family: 'Consolas', monospace;
+            font-size: 8.5pt;
+            font-weight: 700;
+            padding: 7px 10px;
+        }
+        QPushButton[role="mod_btn"] {
+            background: #061826;
+            border: 1px solid #1e4260;
+            border-radius: 7px;
+            color: #a8ccea;
+            font-size: 9pt;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            padding: 7px 10px;
+            text-align: left;
+        }
+        QPushButton[role="mod_btn"]:hover {
+            background: #0b2748;
+            border-color: #3a7ab8;
+            color: #d5ecff;
+        }
+        QPushButton[role="mod_btn"]:pressed {
+            background: #0d2f56;
+        }
+        QPushButton[role="run_all_btn"] {
+            background: #2a1608;
+            border: 1px solid #7a4020;
+            border-radius: 7px;
+            color: #f0a060;
+            font-size: 9pt;
+            font-weight: 800;
+            letter-spacing: 1px;
+            padding: 9px 10px;
+        }
+        QPushButton[role="run_all_btn"]:hover {
+            background: #3d2010;
+            border-color: #c06030;
+            color: #ffc080;
+        }
+        QPushButton[role="toolbar_btn"] {
+            background: #061222;
+            border: 1px solid #1e3d5e;
+            border-radius: 6px;
+            color: #8ab8d8;
+            font-size: 8pt;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            padding: 4px 10px;
+            min-height: 0;
+        }
+        QPushButton[role="toolbar_btn"]:hover {
+            background: #0b2040;
+            border-color: #3a6a9a;
+            color: #c0ddf0;
+        }
+        QPushButton[role="clear_btn"] {
+            background: #1e0a0a;
+            border: 1px solid #5a2020;
+            border-radius: 6px;
+            color: #c06060;
+            font-size: 8pt;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            padding: 4px 10px;
+            min-height: 0;
+        }
+        QPushButton[role="clear_btn"]:hover {
+            background: #2e1010;
+            border-color: #8a3030;
+            color: #e08080;
+        }
         """)
 
-    # ──────────────────────────────────────────────────────────────────────
-    # Tab 1 — Scan
-    # ──────────────────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Tab 1 â€” Scan
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def create_scan_tab(self):
         tab = QWidget(); self.tabs.addTab(tab, "SCAN & SELECT")
@@ -388,16 +389,22 @@ class MainWindow(QMainWindow):
         row.addStretch(); layout.addLayout(row)
 
         self.scan_table = QTableWidget(0, 3)
+        self.scan_table.setProperty("role", "scan_table")
         self.scan_table.setHorizontalHeaderLabels(["SSID", "SIGNAL", "SECURITY"])
         self.scan_table.verticalHeader().setVisible(False)
         self.scan_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.scan_table.setSelectionMode(QTableWidget.SingleSelection)
         self.scan_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.scan_table.setShowGrid(True); self.scan_table.setAlternatingRowColors(False)
+        self.scan_table.setShowGrid(True); self.scan_table.setAlternatingRowColors(True)
+        self.scan_table.setWordWrap(False)
+        self.scan_table.verticalHeader().setDefaultSectionSize(40)
         self.scan_table.horizontalHeader().setStretchLastSection(False)
+        self.scan_table.horizontalHeader().setMinimumSectionSize(90)
         self.scan_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.scan_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        self.scan_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.scan_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Fixed)
+        self.scan_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Fixed)
+        self.scan_table.setColumnWidth(1, 230)
+        self.scan_table.setColumnWidth(2, 190)
         self.scan_table.setMinimumHeight(260); layout.addWidget(self.scan_table)
 
         ar = QHBoxLayout(); ar.setSpacing(10)
@@ -407,22 +414,86 @@ class MainWindow(QMainWindow):
 
         strip = QFrame(); strip.setProperty("role", "target_strip")
         sl = QHBoxLayout(strip); sl.setContentsMargins(12, 10, 12, 10)
-        self.target_state_left  = QLabel("●   TARGET LOCKED"); self.target_state_left.setProperty("role", "target_left")
+        self.target_state_left  = QLabel("o   TARGET LOCKED"); self.target_state_left.setProperty("role", "target_left")
         self.target_state_right = QLabel("None");              self.target_state_right.setProperty("role", "target_right")
         sl.addWidget(self.target_state_left); sl.addStretch(); sl.addWidget(self.target_state_right)
         layout.addWidget(strip)
 
     def _set_scan_placeholder(self, text: str):
         self.scan_table.setRowCount(1)
-        for c, v in enumerate([text, "", ""]): self.scan_table.setItem(0, c, QTableWidgetItem(v))
+        for c, v in enumerate([text, "", ""]):
+            item = QTableWidgetItem(v)
+            item.setTextAlignment(Qt.AlignCenter if c else (Qt.AlignVCenter | Qt.AlignLeft))
+            self.scan_table.setItem(0, c, item)
 
     def _security_item(self, security: str) -> QTableWidgetItem:
-        item = QTableWidgetItem(security.upper()); sec = security.upper()
-        if "WPA3" in sec:   item.setForeground(Qt.cyan)
-        elif "WPA2" in sec: item.setForeground(Qt.green)
-        elif "OPEN" in sec: item.setForeground(Qt.yellow)
-        else:               item.setForeground(Qt.white)
+        sec = security.upper()
+        if "WPA3" in sec:
+            label, fg, bg = "WPA3  STRONG", Qt.cyan, Qt.darkCyan
+        elif "WPA2" in sec:
+            label, fg, bg = "WPA2  SECURE", Qt.green, Qt.darkGreen
+        elif "OPEN" in sec:
+            label, fg, bg = "OPEN  RISK", Qt.yellow, Qt.darkYellow
+        else:
+            label, fg, bg = sec, Qt.white, Qt.darkBlue
+        item = QTableWidgetItem(label)
+        item.setTextAlignment(Qt.AlignCenter)
+        item.setForeground(fg)
+        item.setBackground(bg)
         return item
+
+    def _signal_cell_widget(self, signal: int) -> QWidget:
+        signal = max(0, min(100, int(signal)))
+
+        if signal >= 75:
+            left, right, txt = "#31ff84", "#09de9a", "#7dffc2"
+        elif signal >= 45:
+            left, right, txt = "#ffd34d", "#ffb347", "#ffe49a"
+        else:
+            left, right, txt = "#ff7373", "#ff4f6d", "#ffb3bf"
+
+        root = QWidget()
+        root_layout = QHBoxLayout(root)
+        root_layout.setContentsMargins(10, 0, 10, 0)
+        root_layout.setSpacing(8)
+
+        track = QFrame()
+        track.setFixedHeight(14)
+        track.setMinimumWidth(120)
+        track.setMaximumWidth(120)
+        track.setStyleSheet(
+            "QFrame {"
+            "background:#0a1d32;"
+            "border:1px solid #1b4d78;"
+            "border-radius:7px;"
+            "}"
+        )
+
+        fill = QFrame(track)
+        fill_width = max(8, int((signal / 100) * 118))
+        fill.setGeometry(1, 1, fill_width, 12)
+        fill.setStyleSheet(
+            "QFrame {"
+            f"background:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {left}, stop:1 {right});"
+            "border-radius:6px;"
+            "}"
+        )
+
+        pct = QLabel(f"{signal}%")
+        pct.setStyleSheet(
+            "QLabel {"
+            f"color:{txt};"
+            "font-weight:800;"
+            "font-size:10pt;"
+            "letter-spacing:0.6px;"
+            "}"
+        )
+        pct.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+
+        root_layout.addWidget(track)
+        root_layout.addWidget(pct)
+        root_layout.addStretch()
+        return root
 
     def start_scan(self):
         try:    is_admin = ctypes.windll.shell32.IsUserAnAdmin()
@@ -441,8 +512,10 @@ class MainWindow(QMainWindow):
         if networks:
             self.scan_table.setRowCount(len(networks))
             for row, net in enumerate(networks):
-                self.scan_table.setItem(row, 0, QTableWidgetItem(net.ssid))
-                self.scan_table.setItem(row, 1, QTableWidgetItem(f"{net.signal}%"))
+                ssid_item = QTableWidgetItem(net.ssid or "<hidden>")
+                ssid_item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+                self.scan_table.setItem(row, 0, ssid_item)
+                self.scan_table.setCellWidget(row, 1, self._signal_cell_widget(net.signal))
                 self.scan_table.setItem(row, 2, self._security_item(net.security))
             self.statusBar().showMessage(f"Scan complete: {len(networks)} network(s) found")
         else:
@@ -460,7 +533,7 @@ class MainWindow(QMainWindow):
             net = self.scan_results[row]
             self.config["ssid"] = net.ssid; self.config["interface"] = net.interface
             self.attack_target_label.setText(f"SSID: {net.ssid}")
-            self.target_state_right.setText(f"{net.ssid} · {net.security}")
+            self.target_state_right.setText(f"{net.ssid} - {net.security}")
             self.statusBar().showMessage(f"Target selected: {net.ssid}")
 
     def debug_scanner(self):
@@ -479,9 +552,9 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Scanner Error", f"{e}\n\n{traceback.format_exc()}")
 
-    # ──────────────────────────────────────────────────────────────────────
-    # Tab 2 — Attack Config
-    # ──────────────────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Tab 2 â€” Attack Config
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def create_attack_tab(self):
         tab = QWidget(); self.tabs.addTab(tab, "ATTACK CONFIG")
@@ -557,9 +630,9 @@ class MainWindow(QMainWindow):
         self.start_attack_btn.setEnabled(False); self.stop_btn.setEnabled(True)
         self.statusBar().showMessage(f"Attack running against {self.config['ssid']}")
 
-    # ──────────────────────────────────────────────────────────────────────
-    # Tab 3 — Progress
-    # ──────────────────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Tab 3 â€” Progress
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def create_progress_tab(self):
         tab = QWidget(); self.tabs.addTab(tab, "PROGRESS")
@@ -606,102 +679,422 @@ class MainWindow(QMainWindow):
 
     def on_attack_finished(self, password, attempts, elapsed, verified):
         self.start_attack_btn.setEnabled(True); self.stop_btn.setEnabled(False)
+        was_stopped = bool(self.attack_worker and self.attack_worker.stop_requested)
         if password:
             self.progress_bar.setValue(100); self.progress_percent_label.setText("Progress: 100%")
         else:
             self.progress_percent_label.setText(f"Progress: {self.progress_bar.value()}%")
         if password and verified:
-            dlg = CompromisedDialog(self, self.config.get("ssid") or "Unknown", password, attempts, elapsed)
-            dlg.exec()
+            QMessageBox.information(self, "Target Compromised",
+                f"Password Found!\n\nSSID: {self.config['ssid']}\nPassword: {password}\nAttempts: {attempts}\nTime: {elapsed:.1f}s")
             self.statusBar().showMessage("Attack complete: password verified")
+        elif was_stopped:
+            QMessageBox.information(self, "Attack Stopped", "Attack was stopped by user.")
+            self.statusBar().showMessage("Attack stopped by user")
         else:
             QMessageBox.information(self, "Attack Complete", "Password not found within search space.")
             self.statusBar().showMessage("Attack complete: password not found")
 
-    # ──────────────────────────────────────────────────────────────────────
-    # Tab 4 — Recon
-    # ──────────────────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Tab 4 â€” Recon  (REDESIGNED)
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    #
+    # Layout: horizontal QSplitter
+    #   LEFT  â€” narrow sidebar  (190 px, not resizable by user)
+    #             â€¢ title + subtitle
+    #             â€¢ 9 module buttons (vertical stack, compact)
+    #             â€¢ RUN ALL button
+    #             â€¢ spacer
+    #             â€¢ running-indicator strip (vertical, compact)
+    #   RIGHT â€” main output area  (stretches to fill remaining width)
+    #             â€¢ toolbar row  (filter pills + action buttons + checkboxes)
+    #             â€¢ recon_output QTextEdit  â† given stretch=1, fills everything
+    #
+    # This removes the "Structured Recon Data" table that was eating vertical
+    # space and leaving only ~2 lines for the actual output.  The rich HTML
+    # rendered by _render_recon_output already contains all structured data
+    # beautifully, so the table was purely redundant.
 
     def create_recon_tab(self):
-        tab = QWidget(); self.tabs.addTab(tab, "RECON")
-        layout = QVBoxLayout(tab); layout.setContentsMargins(14, 14, 14, 14); layout.setSpacing(12)
-        layout.addWidget(self.make_tab_header("Reconnaissance", "Run network intelligence modules and view clean, structured output."))
+        tab = QWidget()
+        self.tabs.addTab(tab, "RECON")
 
-        mg = QGridLayout(); mg.setHorizontalSpacing(8); mg.setVerticalSpacing(8)
-        for idx, (label, mid) in enumerate([
-            ("1. Full Recon", "full"), ("2. My Device", "my_device"), ("3. Infrastructure", "infrastructure"),
-            ("4. Wireless Analysis", "wireless"), ("5. Internet Identity", "internet"), ("6. Performance", "performance"),
-            ("7. Resources & Sharing", "resources"), ("8. Security Insights", "security"), ("9. Traffic Analysis", "traffic"),
-        ]):
-            r, c = divmod(idx, 3)
+        # Root layout â€” no padding; the splitter fills the whole pane
+        root = QHBoxLayout(tab)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # â”€â”€ Horizontal splitter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.setHandleWidth(1)
+        splitter.setChildrenCollapsible(False)
+        root.addWidget(splitter)
+
+        # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        # LEFT SIDEBAR
+        # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        sidebar_outer = QWidget()
+        sidebar_outer.setProperty("role", "recon_sidebar")
+        sidebar_outer.setFixedWidth(200)
+        sidebar_layout = QVBoxLayout(sidebar_outer)
+        sidebar_layout.setContentsMargins(12, 14, 8, 14)
+        sidebar_layout.setSpacing(0)
+
+        # Header
+        title_lbl = QLabel("Recon")
+        title_lbl.setStyleSheet(
+            "color:#f6fcff; font-size:16px; font-weight:800; letter-spacing:1px;"
+        )
+        sub_lbl = QLabel("Network intelligence")
+        sub_lbl.setStyleSheet("color:#3c8ad0; font-size:8.5pt;")
+        sidebar_layout.addWidget(title_lbl)
+        sidebar_layout.addWidget(sub_lbl)
+        sidebar_layout.addSpacing(14)
+
+        # Section label
+        mod_section = QLabel("MODULES")
+        mod_section.setStyleSheet(
+            "color:#1e5a8a; font-size:7pt; font-weight:900; letter-spacing:2px;"
+        )
+        sidebar_layout.addWidget(mod_section)
+        sidebar_layout.addSpacing(6)
+
+        # Module buttons â€” vertical stack, compact
+        modules = [
+            ("â‘  Full Recon",          "full"),
+            ("â‘¡ My Device",           "my_device"),
+            ("â‘¢ Infrastructure",      "infrastructure"),
+            ("â‘£ Wireless Analysis",   "wireless"),
+            ("â‘¤ Internet Identity",   "internet"),
+            ("â‘¥ Performance",         "performance"),
+            ("â‘¦ Resources & Sharing", "resources"),
+            ("â‘§ Security Insights",   "security"),
+            ("â‘¨ Traffic Analysis",    "traffic"),
+        ]
+        self._mod_buttons = {}
+        for label, mid in modules:
             btn = QPushButton(label)
+            btn.setProperty("role", "mod_btn")
+            btn.setFixedHeight(30)
             btn.clicked.connect(lambda checked, m=mid: self._run_recon_module(m))
-            mg.addWidget(btn, r, c)
-        layout.addLayout(mg)
+            sidebar_layout.addWidget(btn)
+            sidebar_layout.addSpacing(3)
+            self._mod_buttons[mid] = btn
 
-        run_all = QPushButton("RUN ALL MODULES")
-        run_all.setProperty("variant", "critical")
-        run_all.clicked.connect(lambda: self._run_recon_module("all"))
-        layout.addWidget(run_all)
+        sidebar_layout.addSpacing(8)
 
-        # ── Running indicator strip ──────────────────────────────────────
+        # Run All
+        run_all_btn = QPushButton("â¬¡  RUN ALL MODULES")
+        run_all_btn.setProperty("role", "run_all_btn")
+        run_all_btn.setFixedHeight(34)
+        run_all_btn.clicked.connect(lambda: self._run_recon_module("all"))
+        sidebar_layout.addWidget(run_all_btn)
+
+        sidebar_layout.addStretch()
+
+        # â”€â”€ Running indicator (inside sidebar, bottom) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         self.recon_status_strip = QFrame()
         self.recon_status_strip.setProperty("role", "recon_running")
         self.recon_status_strip.setVisible(False)
-        ss_layout = QHBoxLayout(self.recon_status_strip)
-        ss_layout.setContentsMargins(14, 8, 14, 8)
-        ss_layout.setSpacing(10)
+        self.recon_status_strip.setFixedHeight(52)
 
-        self.recon_spinner_label = QLabel("◐")
+        ss_layout = QVBoxLayout(self.recon_status_strip)
+        ss_layout.setContentsMargins(10, 6, 10, 6)
+        ss_layout.setSpacing(4)
+
+        ss_top = QHBoxLayout()
+        ss_top.setSpacing(6)
+        self.recon_spinner_label = QLabel("â—")
         self.recon_spinner_label.setStyleSheet(
-            "color:#00b8ff; font-size:14pt; font-weight:900;"
+            "color:#00b8ff; font-size:12pt; font-weight:900;"
         )
-        self._spinner_frames = ["◐", "◓", "◑", "◒"]
+        self._spinner_frames = ["â—", "â—“", "â—‘", "â—’"]
         self._spinner_idx = 0
 
-        self.recon_running_label = QLabel("Module running…")
+        self.recon_running_label = QLabel("Runningâ€¦")
         self.recon_running_label.setStyleSheet(
-            "color:#a0d4ff; font-size:9.5pt; font-weight:700; letter-spacing:1px;"
+            "color:#a0d4ff; font-size:8pt; font-weight:700; letter-spacing:0.5px;"
         )
+        ss_top.addWidget(self.recon_spinner_label)
+        ss_top.addWidget(self.recon_running_label)
+        ss_top.addStretch()
+        ss_layout.addLayout(ss_top)
 
         self.recon_pulse_bar = QProgressBar()
-        self.recon_pulse_bar.setRange(0, 0)   # indeterminate marquee
-        self.recon_pulse_bar.setFixedHeight(6)
+        self.recon_pulse_bar.setRange(0, 0)
+        self.recon_pulse_bar.setFixedHeight(4)
         self.recon_pulse_bar.setTextVisible(False)
         self.recon_pulse_bar.setStyleSheet("""
-            QProgressBar {
-                background: #071930;
-                border: none;
-                border-radius: 3px;
-            }
+            QProgressBar { background:#071930; border:none; border-radius:2px; }
             QProgressBar::chunk {
-                border-radius: 3px;
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #00b8ff, stop:1 #09de9a
-                );
+                border-radius:2px;
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
+                    stop:0 #00b8ff, stop:1 #09de9a);
             }
         """)
-
-        ss_layout.addWidget(self.recon_spinner_label)
-        ss_layout.addWidget(self.recon_running_label)
-        ss_layout.addStretch()
-        ss_layout.addWidget(self.recon_pulse_bar, 1)
-        layout.addWidget(self.recon_status_strip)
+        ss_layout.addWidget(self.recon_pulse_bar)
+        sidebar_layout.addWidget(self.recon_status_strip)
 
         self._spinner_timer = QTimer(self)
         self._spinner_timer.setInterval(120)
         self._spinner_timer.timeout.connect(self._tick_spinner)
 
-        # ── Output area ──────────────────────────────────────────────────
-        og = QGroupBox("Recon Output"); ol = QVBoxLayout(og)
+        splitter.addWidget(sidebar_outer)
+
+        # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        # RIGHT OUTPUT PANEL
+        # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(8, 14, 14, 14)
+        right_layout.setSpacing(8)
+
+        # â”€â”€ Toolbar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        toolbar_frame = QFrame()
+        toolbar_frame.setStyleSheet(
+            "QFrame { background:#04111f; border:1px solid #0f2d47; border-radius:7px; }"
+        )
+        toolbar_layout = QHBoxLayout(toolbar_frame)
+        toolbar_layout.setContentsMargins(8, 5, 8, 5)
+        toolbar_layout.setSpacing(5)
+
+        # Filter pills
+        self._pill_counts = {"info": 0, "data": 0, "warn": 0, "error": 0}
+        self._recon_pill_all   = self._make_filter_pill("All",     active=True)
+        self._recon_pill_info  = self._make_filter_pill("Info 0")
+        self._recon_pill_data  = self._make_filter_pill("Data 0")
+        self._recon_pill_warn  = self._make_filter_pill("Warn 0")
+        self._recon_pill_error = self._make_filter_pill("Error 0")
+        for pill in (self._recon_pill_all, self._recon_pill_info,
+                     self._recon_pill_data, self._recon_pill_warn, self._recon_pill_error):
+            toolbar_layout.addWidget(pill)
+
+        toolbar_layout.addStretch()
+
+        # Action buttons
+        copy_btn = QPushButton("COPY")
+        copy_btn.setProperty("role", "toolbar_btn")
+        copy_btn.setFixedHeight(26)
+        copy_btn.clicked.connect(self._recon_copy_log)
+        toolbar_layout.addWidget(copy_btn)
+
+        csv_btn = QPushButton("CSV")
+        csv_btn.setProperty("role", "toolbar_btn")
+        csv_btn.setFixedHeight(26)
+        csv_btn.clicked.connect(self._recon_export_csv)
+        toolbar_layout.addWidget(csv_btn)
+
+        json_btn = QPushButton("JSON")
+        json_btn.setProperty("role", "toolbar_btn")
+        json_btn.setFixedHeight(26)
+        json_btn.clicked.connect(self._recon_export_json)
+        toolbar_layout.addWidget(json_btn)
+
+        clear_btn = QPushButton("CLEAR")
+        clear_btn.setProperty("role", "clear_btn")
+        clear_btn.setFixedHeight(26)
+        clear_btn.clicked.connect(self._recon_clear)
+        toolbar_layout.addWidget(clear_btn)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.VLine)
+        sep.setStyleSheet("color:#1a3d5e;")
+        toolbar_layout.addWidget(sep)
+
+        self._autoscroll_check = QCheckBox("Auto-scroll")
+        self._autoscroll_check.setChecked(True)
+        self._autoscroll_check.setStyleSheet("font-size:8.5pt; color:#7aaac8;")
+        toolbar_layout.addWidget(self._autoscroll_check)
+
+        self._severity_combo = QComboBox()
+        self._severity_combo.addItems([
+            "All",
+            "Alerts (Warn + Error)",
+            "Info",
+            "Data",
+            "Warn",
+            "Error",
+        ])
+        self._severity_combo.setFixedHeight(24)
+        self._severity_combo.currentIndexChanged.connect(self._on_recon_view_changed)
+        toolbar_layout.addWidget(self._severity_combo)
+
+        self._collapse_sections_check = QCheckBox("Collapse sections")
+        self._collapse_sections_check.setChecked(False)
+        self._collapse_sections_check.setStyleSheet("font-size:8.5pt; color:#7aaac8;")
+        self._collapse_sections_check.toggled.connect(self._on_recon_view_changed)
+        toolbar_layout.addWidget(self._collapse_sections_check)
+
+        right_layout.addWidget(toolbar_frame)
+
+        # â”€â”€ Summary strip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        summary_frame = QFrame()
+        summary_frame.setProperty("role", "recon_summary")
+        summary_layout = QHBoxLayout(summary_frame)
+        summary_layout.setContentsMargins(8, 6, 8, 6)
+        summary_layout.setSpacing(6)
+        self._summary_sections = QLabel("Sections 0")
+        self._summary_sections.setProperty("role", "summary_card")
+        self._summary_entries = QLabel("Entries 0")
+        self._summary_entries.setProperty("role", "summary_card")
+        self._summary_alerts = QLabel("Alerts 0")
+        self._summary_alerts.setProperty("role", "summary_card")
+        self._summary_view = QLabel("View ALL")
+        self._summary_view.setProperty("role", "summary_card")
+        summary_layout.addWidget(self._summary_sections)
+        summary_layout.addWidget(self._summary_entries)
+        summary_layout.addWidget(self._summary_alerts)
+        summary_layout.addWidget(self._summary_view)
+        summary_layout.addStretch()
+        right_layout.addWidget(summary_frame)
+
+        # â”€â”€ Recon output â€” THE HERO WIDGET â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # Wrap in a styled frame so it has the dark border
+        output_frame = QFrame()
+        output_frame.setProperty("role", "recon_output_frame")
+        output_frame_layout = QVBoxLayout(output_frame)
+        output_frame_layout.setContentsMargins(0, 0, 0, 0)
+        output_frame_layout.setSpacing(0)
+
         self.recon_output = QTextEdit()
         self.recon_output.setReadOnly(True)
         self.recon_output.setFont(QFont("Consolas", 10))
-        ol.addWidget(self.recon_output)
-        layout.addWidget(og, 1)
+        # Remove the default border since the frame provides it
+        self.recon_output.setStyleSheet("""
+            QTextEdit {
+                background: #060f1c;
+                border: none;
+                border-radius: 8px;
+                color: #ebf8ff;
+                padding: 6px 8px;
+                line-height: 1.45;
+                selection-background-color: #0e3358;
+                selection-color: #ffffff;
+            }
+        """)
+        output_frame_layout.addWidget(self.recon_output)
 
-    # ── Spinner helpers ───────────────────────────────────────────────────
+        # stretch=1 â†’ this consumes ALL remaining vertical space
+        right_layout.addWidget(output_frame, 1)
+
+        splitter.addWidget(right_widget)
+
+        # Fix sidebar width, let right panel expand
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        self._update_recon_summary()
+
+    # â”€â”€ Filter pill helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def _make_filter_pill(self, text: str, active: bool = False) -> QLabel:
+        pill = QLabel(text)
+        pill.setFixedHeight(22)
+        base = (
+            "border-radius:4px; padding:2px 9px; font-size:7.5pt; font-weight:800;"
+            "font-family:'Consolas',monospace; letter-spacing:0.5px;"
+        )
+        if active:
+            pill.setStyleSheet(base + "background:#0d2d4a; border:1px solid #00b8ff; color:#00e5ff;")
+        else:
+            pill.setStyleSheet(base + "background:#061426; border:1px solid #1e4d79; color:#4b95d5;")
+        return pill
+
+    # â”€â”€ Toolbar action slots â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def _recon_copy_log(self):
+        QApplication.clipboard().setText(self.recon_output.toPlainText())
+        self.statusBar().showMessage("Log copied to clipboard")
+
+    def _recon_export_csv(self):
+        path, _ = QFileDialog.getSaveFileName(self, "Export CSV", "recon_data.csv", "CSV Files (*.csv)")
+        if not path:
+            return
+        import csv
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Tag", "Kind", "Label", "Value", "Content"])
+            rows = self._recon_records or [{"tag": "LOG", "kind": "line", "content": ln.strip()} for ln in self.recon_output.toPlainText().splitlines() if ln.strip()]
+            for row in rows:
+                writer.writerow([
+                    row.get("tag", ""),
+                    row.get("kind", ""),
+                    row.get("label", ""),
+                    row.get("value", ""),
+                    row.get("content", ""),
+                ])
+        self.statusBar().showMessage(f"CSV exported â†’ {path}")
+
+    def _recon_export_json(self):
+        path, _ = QFileDialog.getSaveFileName(self, "Export JSON", "recon_data.json", "JSON Files (*.json)")
+        if not path:
+            return
+        import json
+        rows = self._recon_records or [{"tag": "LOG", "kind": "line", "content": ln.strip()} for ln in self.recon_output.toPlainText().splitlines() if ln.strip()]
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(rows, f, indent=2)
+        self.statusBar().showMessage(f"JSON exported â†’ {path}")
+
+    def _recon_clear(self):
+        self.recon_output.clear()
+        self._reset_recon_metrics()
+        self.statusBar().showMessage("Recon output cleared")
+        self._recon_records = []
+        self._update_recon_summary()
+
+    def _reset_recon_metrics(self):
+        self._pill_counts = {"info": 0, "data": 0, "warn": 0, "error": 0}
+        self._recon_pill_info.setText("Info 0")
+        self._recon_pill_data.setText("Data 0")
+        self._recon_pill_warn.setText("Warn 0")
+        self._recon_pill_error.setText("Error 0")
+
+    def _on_recon_view_changed(self):
+        combo_text = self._severity_combo.currentText().lower()
+        if "alerts" in combo_text:
+            self._recon_filter_mode = "alerts"
+        elif "info" in combo_text:
+            self._recon_filter_mode = "info"
+        elif "data" in combo_text:
+            self._recon_filter_mode = "data"
+        elif "warn" in combo_text:
+            self._recon_filter_mode = "warn"
+        elif "error" in combo_text:
+            self._recon_filter_mode = "error"
+        else:
+            self._recon_filter_mode = "all"
+        self._recon_collapse_sections = self._collapse_sections_check.isChecked()
+        self._refresh_recon_view()
+
+    def _passes_recon_filter(self, rec: dict) -> bool:
+        mode = self._recon_filter_mode
+        if mode == "all":
+            return True
+
+        kind = rec.get("kind", "")
+        tag = str(rec.get("tag", "")).upper()
+
+        if kind in ("section",):
+            return True
+        if kind in ("divider", "table_header", "table_row", "kv", "meter"):
+            return mode == "all"
+
+        if mode == "alerts":
+            return tag in ("WARN", "ERROR")
+        return tag == mode.upper()
+
+    def _update_recon_summary(self):
+        sections = sum(1 for r in self._recon_records if r.get("kind") == "section")
+        entries = sum(1 for r in self._recon_records if r.get("kind") not in ("section", "divider"))
+        alerts = sum(1 for r in self._recon_records if str(r.get("tag", "")).upper() in ("WARN", "ERROR"))
+        view = self._recon_filter_mode.upper() if self._recon_filter_mode != "alerts" else "ALERTS"
+        if self._recon_collapse_sections:
+            view += " + COLLAPSED"
+        self._summary_sections.setText(f"Sections {sections}")
+        self._summary_entries.setText(f"Entries {entries}")
+        self._summary_alerts.setText(f"Alerts {alerts}")
+        self._summary_view.setText(f"View {view}")
+
+    # â”€â”€ Spinner helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def _tick_spinner(self):
         self._spinner_idx = (self._spinner_idx + 1) % len(self._spinner_frames)
@@ -709,18 +1102,33 @@ class MainWindow(QMainWindow):
 
     def _set_recon_running(self, module_name: str):
         label = module_name.upper().replace("_", " ")
-        self.recon_running_label.setText(f"Running: {label}…")
+        self.recon_running_label.setText(f"{label}â€¦")
         self.recon_status_strip.setVisible(True)
         self._spinner_timer.start()
+        # Visually highlight the active button
+        for mid, btn in self._mod_buttons.items():
+            if mid == module_name:
+                btn.setStyleSheet(
+                    "QPushButton[role='mod_btn'] {"
+                    "background:#0d2f56; border:1px solid #00b8ff; color:#00e5ff;}"
+                )
+            else:
+                btn.setStyleSheet("")
 
     def _set_recon_idle(self):
         self._spinner_timer.stop()
         self.recon_status_strip.setVisible(False)
+        # Reset all button styles
+        for btn in self._mod_buttons.values():
+            btn.setStyleSheet("")
 
-    # ── Module dispatch ───────────────────────────────────────────────────
+    # â”€â”€ Module dispatch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def _run_recon_module(self, module_id: str):
         self.recon_output.clear()
+        self._reset_recon_metrics()
+        self._recon_records = []
+        self._update_recon_summary()
         self._set_recon_running(module_id)
         self.statusBar().showMessage(f"Running recon module: {module_id}")
 
@@ -767,6 +1175,9 @@ class MainWindow(QMainWindow):
 
     def run_recon(self):
         self.recon_output.clear()
+        self._reset_recon_metrics()
+        self._recon_records = []
+        self._update_recon_summary()
         self._append_recon_card("INFO", "Running full reconnaissance (may take 30-120s)...", "#38bdf8")
         self.statusBar().showMessage("Recon running...")
         self.worker = ReconWorker()
@@ -781,9 +1192,9 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Recon failed")
         QMessageBox.critical(self, "Recon Error", message)
 
-    # ══════════════════════════════════════════════════════════════════════
-    # Recon rendering — fully finetuned v3
-    # ══════════════════════════════════════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    # Recon rendering â€” fully finetuned v3
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     # Per-tag config: (card-bg, left-accent, badge-text, badge-bg)
     _TAG_CFG: dict[str, tuple[str, str, str, str]] = {
@@ -791,39 +1202,26 @@ class MainWindow(QMainWindow):
         "INFO":  ("#051a28", "#38bdf8", "#38bdf8", "#062233"),
         "WARN":  ("#1e1505", "#f59e0b", "#f59e0b", "#2a1c06"),
         "ERROR": ("#1e0509", "#ff5f6d", "#ff5f6d", "#2a070c"),
-        # LOG uses a more readable mid-blue-grey — not too dark, not noisy
         "LOG":   ("#06111e", "#1e4d7a", "#4a8ab5", "#071525"),
     }
 
-    # ── Address syntax highlighter ────────────────────────────────────────
-
     @staticmethod
     def _hl_addresses(safe: str) -> str:
-        """
-        Highlight network addresses inside already-HTML-escaped text.
-        Application order: MAC → IPv6 → IPv4 → bare integers.
-        We skip content already inside a <span> tag to avoid double-wrapping.
-        """
-        # MAC  aa:bb:cc:dd:ee:ff  /  aa-bb-cc-dd-ee-ff
         safe = re.sub(
             r"(\b(?:[0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}\b)",
             r"<span style='color:#c084fc;font-weight:700;'>\1</span>",
             safe,
         )
-        # IPv6 (two or more colon-separated hex groups, optional prefix length)
         safe = re.sub(
             r"(\b(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}(?:/\d+)?\b)",
             r"<span style='color:#67e8f9;font-weight:600;'>\1</span>",
             safe,
         )
-        # IPv4 with optional CIDR
         safe = re.sub(
             r"(\b\d{1,3}(?:\.\d{1,3}){3}(?:/\d+)?\b)",
             r"<span style='color:#2dd4bf;font-weight:700;'>\1</span>",
             safe,
         )
-        # Standalone integers — exclude digits already inside HTML attribute values
-        # (e.g. inside color:#2dd4bf or font-size:9pt)
         safe = re.sub(
             r"(?<![=#\w\-])(\b\d+\b)(?![;%\w\-])",
             r"<span style='color:#fbbf24;'>\1</span>",
@@ -831,19 +1229,25 @@ class MainWindow(QMainWindow):
         )
         return safe
 
-    # ── Stream pre-processing ─────────────────────────────────────────────
-
     def _strip_ansi(self, text: str) -> str:
         text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
         text = re.sub(r"\uFFFD?\[[0-9;]*m", "", text)
+        replacements = {
+            "Ã¢Å“â€œ": "âœ“",
+            "Ã¢Å“â€”": "âœ—",
+            "Ã¢â€ â€™": "â†’",
+            "Ã¢â‚¬Â¢": "â€¢",
+            "Ã¢Å¡Â ": "âš ",
+            "Ã¢â€¢Â": "â•",
+            "Ã¢â€â‚¬": "â”€",
+            "Ã¢â‚¬â€": "â€”",
+        }
+        for wrong, correct in replacements.items():
+            text = text.replace(wrong, correct)
         return text.replace("\r", "")
 
     def _split_into_lines(self, raw: str) -> list[str]:
-        """
-        Force LOG/DATA/INFO/WARN/ERROR tokens onto their own line.
-        The recon worker sometimes emits them concatenated with prior output
-        (e.g.  "...192.168.1.3   306LOGNone").
-        """
+        raw = re.sub(r"\b(LOG|DATA|INFO|WARN|ERROR)(None|null|n/a|-)\b", r"\1 \2", raw, flags=re.IGNORECASE)
         text = re.sub(
             r"(?<!\n)(?<!\A)\b(LOG|DATA|INFO|WARN|ERROR)\b",
             r"\n\1",
@@ -851,9 +1255,6 @@ class MainWindow(QMainWindow):
         )
         return [ln.strip() for ln in text.splitlines() if ln.strip()]
 
-    # ── Line classifier ───────────────────────────────────────────────────
-
-    # Keywords that promote a plain line to a SECTION heading
     _SECTION_KW = [
         "route table", "ipv4", "ipv6", "persistent routes", "active routes",
         "active tcp", "active udp", "connections", "system identity",
@@ -862,43 +1263,84 @@ class MainWindow(QMainWindow):
         "traffic analysis", "recon result", "wireless", "ghostlink",
     ]
 
-    def _classify_line(self, line: str) -> tuple[str, str]:
-        """Return (tag, body).  Tags: LOG DATA INFO WARN ERROR SECTION DIVIDER TABLE"""
+    @staticmethod
+    def _is_meter_line(line: str) -> bool:
+        compact = line.strip()
+        if len(compact) < 8:
+            return False
+        return bool(re.fullmatch(r"[#=\[\]\(\)\|/\\+\-_.:;%\sâ–ˆâ–“â–’â–‘â–â–‚â–ƒâ–„â–…â–†â–‡]+", compact))
 
-        # 1. Explicit stream token — allow zero or more spaces between tag and body
+    def _classify_line(self, line: str) -> tuple[str, str]:
+        if line.strip().lower() in ("none", "null", "n/a", "-"):
+            return "LOG", "â€”"
+
         m = re.match(r"^(LOG|DATA|INFO|WARN|ERROR)\s*(.*)", line, re.IGNORECASE)
         if m:
             tag  = m.group(1).upper()
             body = m.group(2).strip()
-            # Normalise empty / "None" bodies to an em-dash placeholder
             if not body or body.lower() in ("none", "null", "n/a", "-"):
-                return tag, "—"
+                return tag, "â€”"
             return tag, body
 
-        # 2. Pure divider (6+ repeated decoration chars)
-        if len(line) >= 6 and re.fullmatch(r"[=\-─═_·\s]{6,}", line):
+        status_prefix = re.match(r"^[\[\(]?(âœ“|âœ—|âš |â†’)\]?\s*(.*)$", line)
+        if status_prefix and status_prefix.group(2).strip():
+            sym = status_prefix.group(1)
+            msg = status_prefix.group(2).strip()
+            if sym == "âœ“":
+                return "DATA", msg
+            if sym == "âœ—":
+                return "ERROR", msg
+            if sym == "âš ":
+                return "WARN", msg
+            return "INFO", msg
+
+        if len(line) >= 6 and re.fullmatch(r"[=\-_.\s]{6,}", line):
             return "DIVIDER", line
 
-        # 3. Section / sub-heading detection
+        if self._is_meter_line(line):
+            return "METER", line.strip()
+
+        kv_colon = re.match(r"^([A-Za-z][A-Za-z0-9 _/\-().]{2,36}):\s+(.+)$", line)
+        if kv_colon:
+            return "KV", f"{kv_colon.group(1).strip()}\t{kv_colon.group(2).strip()}"
+
+        kv_spaced = re.match(r"^([A-Za-z][A-Za-z0-9 _/\-().]{2,36})\s{2,}(.+)$", line)
+        if kv_spaced and len(re.split(r"\s{2,}|\t+", kv_spaced.group(2).strip())) <= 2:
+            return "KV", f"{kv_spaced.group(1).strip()}\t{kv_spaced.group(2).strip()}"
+
+        # Handle uppercase "label value" lines with single spaces (e.g. "IPV4 ADDRESS 192.168.1.3/24")
+        kv_upper = re.match(r"^([A-Z][A-Z0-9 _/\-]{3,36})\s+(.+)$", line)
+        if kv_upper:
+            label = kv_upper.group(1).strip()
+            value = kv_upper.group(2).strip()
+            if (
+                len(label.split()) >= 2
+                and re.search(r"(?:\d{1,3}\.){3}\d{1,3}|[0-9A-Fa-f:]{3,}|yes|no|on-link|preferred|unknown", value, re.IGNORECASE)
+                and not re.fullmatch(r"[A-Z0-9 _/\-]{4,}", value)
+            ):
+                return "KV", f"{label}\t{value}"
+
+        if re.match(r"^(measuring|checking|running|querying|detecting|capturing|scanning|probing)\b", line, re.IGNORECASE):
+            return "INFO", line
+
         low = line.lower()
         is_section_pattern = any(re.search(p, line, re.IGNORECASE) for p in [
-            r"^\[\d+\]", r"^={3,}", r"─{4,}", r"^#+\s",
+            r"^\[\d+\]", r"^={3,}", r"â”€{4,}", r"^#+\s",
         ])
-        is_section_keyword = any(kw in low for kw in self._SECTION_KW)
-        # Lines ending in ":" that look like sub-headings (e.g. "Active Routes:")
-        is_subheader = bool(re.match(r"^[A-Za-z][A-Za-z0-9 _/\-]{2,50}:$", line))
+        is_section_keyword = (
+            len(line) <= 64
+            and any(kw in low for kw in self._SECTION_KW)
+            and not line.rstrip().endswith(".")
+        )
+        is_subheader = bool(re.match(r"^[A-Za-z][A-Za-z0-9 _/\-().]{2,80}:$", line))
 
         if is_section_pattern or is_section_keyword or is_subheader:
             return "SECTION", line
 
-        # 4. Preformatted / tabular (tabs or 3+ consecutive spaces)
         if "\t" in line or re.search(r" {3,}", line):
             return "TABLE", line
 
-        # 5. Default
         return "LOG", line
-
-    # ── HTML card builders ────────────────────────────────────────────────
 
     def _divider_html(self) -> str:
         return (
@@ -909,123 +1351,281 @@ class MainWindow(QMainWindow):
             "'></div>"
         )
 
+    @staticmethod
+    def _hl_semantic(safe: str) -> str:
+        # Positive state
+        safe = re.sub(
+            r"\b(enabled|on|active|responsive|connected|listening|established|secure|good|excellent)\b",
+            r"<span style='color:#22c55e;font-weight:700;'>\1</span>",
+            safe,
+            flags=re.IGNORECASE,
+        )
+        # Warning / weak state
+        safe = re.sub(
+            r"\b(warn|warning|degraded|unknown|limited|congested)\b",
+            r"<span style='color:#f59e0b;font-weight:700;'>\1</span>",
+            safe,
+            flags=re.IGNORECASE,
+        )
+        # Negative / failure state
+        safe = re.sub(
+            r"\b(error|failed|disabled|off|blocked|critical|vulnerable|open network)\b",
+            r"<span style='color:#ff6b7a;font-weight:700;'>\1</span>",
+            safe,
+            flags=re.IGNORECASE,
+        )
+        return safe
+
     def _section_html(self, body: str) -> str:
-        # Strip trailing colon — the visual treatment is enough
         display = html_mod.escape(body).rstrip(":")
+        is_major = bool(re.match(r"^\[\d+\]", body.strip())) or "ghostlink" in body.lower()
+        if is_major:
+            margin = "16px 0 6px 0"
+            pad = "10px 16px"
+            bg = "qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #0a2442, stop:1 #09192d)"
+            border = "1px solid #245489"
+            left = "5px solid #60a5fa"
+            size = "9.5pt"
+        else:
+            margin = "10px 0 4px 0"
+            pad = "7px 12px"
+            bg = "#081a2f"
+            border = "1px solid #17395f"
+            left = "3px solid #2e88d8"
+            size = "9pt"
         return (
             "<div style='"
-            "margin:16px 0 4px 0;"
-            "padding:9px 16px;"
-            "background:#091d36;"
-            "border-top:1px solid #1c4a82;"
-            "border-bottom:1px solid #1c4a82;"
-            "border-left:4px solid #818cf8;"
-            "border-radius:5px;"
+            f"margin:{margin};"
+            f"padding:{pad};"
+            f"background:{bg};"
+            f"border:{border};"
+            f"border-left:{left};"
+            "border-radius:7px;"
             "'>"
             "<span style='"
-            "color:#ddd6fe;"
+            "color:#dbeafe;"
             "font-family:Consolas,monospace;"
-            "font-size:10pt;"
+            f"font-size:{size};"
             "font-weight:800;"
-            "letter-spacing:1.5px;"
+            "letter-spacing:1.2px;"
             "text-transform:uppercase;"
             f"'>{display}</span>"
             "</div>"
         )
 
-    def _table_header_html(self, body: str) -> str:
-        safe = html_mod.escape(body)
+    @staticmethod
+    def _split_table_cols(body: str) -> list[str]:
+        cols = [c.strip() for c in re.split(r"\s{2,}|\t+", body.strip()) if c.strip()]
+        return cols if cols else [body.strip()]
+
+    def _looks_like_table_header(self, body: str) -> bool:
+        cols = self._split_table_cols(body)
+        if len(cols) < 2:
+            return False
+        if any(re.search(r"\b\d{1,3}(?:\.\d{1,3}){3}\b|[0-9A-Fa-f]{2}:", c) for c in cols):
+            return False
+        alpha_ratio = sum(1 for c in cols if re.search(r"[A-Za-z]", c)) / max(len(cols), 1)
+        return alpha_ratio >= 0.8
+
+    def _kv_html(self, body: str) -> str:
+        if "\t" not in body:
+            return self._tagged_card_html("LOG", body)
+        label, value = body.split("\t", 1)
+        safe_label = html_mod.escape(label.strip())
+        raw_value = value.strip()
+        metric_match = re.match(r"^([#=â–ˆâ–“â–’â–‘â–â–‚â–ƒâ–„â–…â–†â–‡|:\-\. ]{1,})\s+(\d+)$", raw_value)
+        if metric_match:
+            bar_raw = metric_match.group(1)
+            metric_val = metric_match.group(2)
+            bar_len = len(re.sub(r"\s+", "", bar_raw))
+            bar_len = max(4, min(bar_len, 42))
+            slots = 24
+            # Non-linear scaling keeps very small values visually present (e.g. "1")
+            fill_slots = max(3, min(slots, round((bar_len / 42) ** 0.6 * slots)))
+            # Smooth cyan-blue segmented bar; keep Qt rich-text safe by using inline spans.
+            def _seg_color(i: int) -> str:
+                t = i / max(fill_slots - 1, 1)
+                r = int(103 + (56 - 103) * t)
+                g = int(232 + (189 - 232) * t)
+                b = int(249 + (248 - 249) * t)
+                return f"#{r:02x}{g:02x}{b:02x}"
+
+            fill = "".join(
+                f"<span style='color:{_seg_color(i)};'>â–°</span>"
+                for i in range(fill_slots)
+            )
+            empty = "<span style='color:#224665;'>â–±</span>" * (slots - fill_slots)
+            pct = int(round((fill_slots / slots) * 100))
+            safe_value = (
+                "<span style='display:inline-block; min-width:300px; padding:2px 8px; "
+                "background:#07182c; border:1px solid #17456e; border-radius:7px;'>"
+                f"{fill}{empty}"
+                "</span> "
+                "<span style='display:inline-block; min-width:28px; text-align:center; "
+                "padding:1px 6px; background:#2b1f07; border:1px solid #7a5a1a; border-radius:6px; "
+                "color:#fbbf24; font-weight:800;'>"
+                f"{metric_val}"
+                "</span> "
+                "<span style='display:inline-block; min-width:40px; text-align:center; "
+                "padding:1px 6px; background:#102236; border:1px solid #2a5f8f; border-radius:6px; "
+                "color:#8bd1ff; font-weight:700;'>"
+                f"{pct}%"
+                "</span>"
+            )
+        else:
+            safe_value = self._hl_semantic(self._hl_addresses(html_mod.escape(raw_value)))
         return (
-            "<div style='"
-            "margin:6px 0 0 0;"
-            "padding:5px 14px;"
-            "background:#0b2240;"
-            "border-bottom:2px solid #1e5090;"
-            "border-radius:4px 4px 0 0;"
-            "font-family:Consolas,monospace;"
-            "font-size:8pt;"
-            "color:#5b9bd5;"
-            "font-weight:800;"
-            "letter-spacing:2px;"
-            "text-transform:uppercase;"
-            "white-space:pre;"
-            f"'>{safe}</div>"
+            "<table width='100%' cellspacing='0' cellpadding='0' style='"
+            "margin:3px 0;"
+            "background:#061a2f;"
+            "border:1px solid #113253;"
+            "border-left:3px solid #1d8ee0;"
+            "border-radius:5px;"
+            "'>"
+            "<tr>"
+            "<td width='250' style='padding:6px 10px; color:#8dbce1; font-family:Consolas,monospace; font-size:8.5pt; font-weight:700;'>"
+            f"{safe_label}"
+            "</td>"
+            "<td style='padding:6px 10px; color:#d6ecff; font-family:Consolas,monospace; font-size:9.5pt; word-break:break-word;'>"
+            f"{safe_value}"
+            "</td>"
+            "</tr>"
+            "</table>"
         )
 
-    def _table_row_html(self, body: str, idx: int) -> str:
+    def _table_header_html(self, body: str) -> str:
+        cols = self._split_table_cols(body)
+        cells = "".join(
+            "<th style='"
+            "padding:7px 10px;"
+            "text-align:left;"
+            "color:#7eb5e6;"
+            "font-family:Consolas,monospace;"
+            "font-size:8pt;"
+            "font-weight:800;"
+            "letter-spacing:0.8px;"
+            "text-transform:uppercase;"
+            "border-bottom:1px solid #2e6ba7;"
+            "'>"
+            f"{html_mod.escape(col)}"
+            "</th>"
+            for col in cols
+        )
+        return (
+            "<table width='100%' cellspacing='0' cellpadding='0' style='"
+            "margin:6px 0 0 0;"
+            "border-collapse:collapse;"
+            "border:1px solid #12385e;"
+            "border-radius:6px;"
+            "overflow:hidden;"
+            "background:#091b31;"
+            "'>"
+            "<thead><tr style='background:#0b2240;'>"
+            f"{cells}"
+            "</tr></thead><tbody>"
+        )
+
+    def _meter_html(self, body: str) -> str:
         safe = html_mod.escape(body)
-        safe = self._hl_addresses(safe)
-        # Clearly alternating rows: slightly more contrast than before
+        return (
+            "<table width='100%' cellspacing='0' cellpadding='0' style='"
+            "margin:4px 0 8px 0;"
+            "background:#06111f;"
+            "border:1px solid #143a62;"
+            "border-left:3px solid #38bdf8;"
+            "border-radius:6px;"
+            "'>"
+            "<tr>"
+            "<td width='64' style='padding:5px 8px; text-align:center; color:#7ec3f6; font-family:Consolas,monospace; font-size:7pt; font-weight:900; letter-spacing:1px; border-right:1px solid #1f4f7f;'>METER</td>"
+            "<td style='padding:6px 10px; color:#cde8ff; font-family:Consolas,monospace; font-size:8.5pt; white-space:pre;'>"
+            f"{safe}"
+            "</td>"
+            "</tr>"
+            "</table>"
+        )
+
+    def _table_row_html(self, body: str, idx: int, col_count: int = 0) -> str:
+        cols = self._split_table_cols(body)
+        target_cols = max(col_count, len(cols))
+        if len(cols) < target_cols:
+            cols.extend([""] * (target_cols - len(cols)))
         bg            = "#071627" if idx % 2 == 0 else "#0a1e35"
         border_accent = "#0d3258" if idx % 2 == 0 else "#102c4a"
+        cells = "".join(
+            "<td style='"
+            "padding:6px 10px;"
+            "color:#b8ddf8;"
+            "font-family:Consolas,monospace;"
+            "font-size:9pt;"
+            "border-bottom:1px solid #0d2d4a;"
+            "white-space:nowrap;"
+            "'>"
+            f"{self._hl_addresses(html_mod.escape(col))}"
+            "</td>"
+            for col in cols
+        )
         return (
-            f"<div style='"
-            f"margin:0;"
-            f"padding:4px 14px;"
-            f"background:{bg};"
-            f"border-left:2px solid {border_accent};"
-            f"font-family:Consolas,monospace;"
-            f"font-size:9pt;"
-            f"color:#a8d4f0;"
-            f"line-height:1.65;"
-            f"white-space:pre;"
-            f"'>{safe}</div>"
+            f"<tr style='background:{bg}; border-left:2px solid {border_accent};'>"
+            f"{cells}"
+            f"</tr>"
         )
 
     def _tagged_card_html(self, tag: str, body: str) -> str:
         bg, accent, badge_text, badge_bg = self._TAG_CFG.get(tag, self._TAG_CFG["LOG"])
-
-        is_placeholder = (body == "—")
-
+        is_placeholder = (body == "â€”")
         safe = html_mod.escape(body)
         if not is_placeholder:
-            safe = self._hl_addresses(safe)
-
-        # Visual treatment for empty/placeholder lines
-        body_color = "#2e5272" if is_placeholder else "#cce8ff"
+            safe = self._hl_semantic(self._hl_addresses(safe))
+        body_color = "#597894" if is_placeholder else "#d9eeff"
         body_size  = "8.5pt"   if is_placeholder else "9.5pt"
         body_style = "font-style:italic;" if is_placeholder else ""
 
+        # Update pill counts
+        tag_lower = tag.lower()
+        if tag_lower in self._pill_counts and not is_placeholder:
+            self._pill_counts[tag_lower] += 1
+            count = self._pill_counts[tag_lower]
+            pill_map = {
+                "info":  self._recon_pill_info,
+                "data":  self._recon_pill_data,
+                "warn":  self._recon_pill_warn,
+                "error": self._recon_pill_error,
+            }
+            if tag_lower in pill_map:
+                pill_map[tag_lower].setText(f"{tag.capitalize()} {count}")
+
         return (
-            # Outer container — overflow:hidden clips badge to card height
-            f"<div style='"
-            f"margin:2px 0;"
+            f"<table width='100%' cellspacing='0' cellpadding='0' style='"
+            f"margin:3px 0;"
             f"background:{bg};"
             f"border:1px solid #0d2d4e;"
             f"border-left:3px solid {accent};"
             f"border-radius:5px;"
-            f"overflow:hidden;"
             f"'>"
-            # Badge — no outer padding on the card; badge fills its own height via padding
-            f"<span style='"
-            f"display:inline-block;"
+            f"<tr>"
+            f"<td width='64' style='"
+            f"padding:5px 8px;"
             f"background:{badge_bg};"
             f"color:{badge_text};"
             f"font-family:Consolas,monospace;"
-            f"font-size:6.5pt;"
+            f"font-size:7pt;"
             f"font-weight:900;"
-            f"padding:5px 10px;"          # top/bottom padding = row height control
-            f"margin-right:12px;"
-            f"border-right:1px solid {accent}22;"
-            f"min-width:38px;"
+            f"letter-spacing:1px;"
             f"text-align:center;"
-            f"letter-spacing:1.5px;"
-            f"vertical-align:middle;"
-            f"'>{tag}</span>"
-            # Body text — line-height makes the row feel spacious
-            f"<span style='"
+            f"border-right:1px solid {accent}33;"
+            f"'>{tag}</td>"
+            f"<td style='"
+            f"padding:6px 10px;"
             f"color:{body_color};"
             f"font-family:Consolas,monospace;"
             f"font-size:{body_size};"
-            f"line-height:1.9;"
-            f"vertical-align:middle;"
-            f"word-break:break-all;"
+            f"line-height:1.72;"
+            f"word-break:break-word;"
             f"{body_style}"
-            f"'>{safe}</span>"
-            f"</div>"
+            f"'>{safe}</td>"
+            f"</tr>"
+            f"</table>"
         )
-
-    # ── Main render entry point ───────────────────────────────────────────
 
     def _render_recon_output(self, raw: str) -> None:
         cleaned = self._strip_ansi(raw)
@@ -1033,112 +1633,163 @@ class MainWindow(QMainWindow):
         if not lines:
             return
 
-        parts: list[str] = []
-        prev_tag    = None
+        parsed_records: list[dict] = []
         table_row_i = 0
         in_table    = False
+        table_cols  = 0
 
         for line in lines:
             tag, body = self._classify_line(line)
 
-            # ── Track TABLE block boundaries for header detection ──────
             entering_table = (tag == "TABLE" and not in_table)
             leaving_table  = (tag != "TABLE" and in_table)
 
             if entering_table:
                 in_table    = True
                 table_row_i = 0
+                table_cols = 0
             elif leaving_table:
                 in_table = False
-                # Thin bottom rule closes the table block visually
-                parts.append(
-                    "<div style='height:1px;background:#0d2d4a;margin-bottom:8px;'></div>"
-                )
                 table_row_i = 0
+                table_cols = 0
 
-            # ── Render ────────────────────────────────────────────────
             if tag == "DIVIDER":
-                parts.append(self._divider_html())
+                parsed_records.append({"tag": "DIVIDER", "kind": "divider", "content": body})
 
             elif tag == "SECTION":
-                if prev_tag is not None and prev_tag not in ("SECTION", "DIVIDER"):
-                    parts.append("<div style='height:4px;'></div>")
-                parts.append(self._section_html(body))
+                parsed_records.append({"tag": "SECTION", "kind": "section", "content": body})
+
+            elif tag == "KV":
+                label, value = body.split("\t", 1) if "\t" in body else (body, "")
+                parsed_records.append({
+                    "tag": "DATA",
+                    "kind": "kv",
+                    "label": label.strip(),
+                    "value": value.strip(),
+                    "content": f"{label.strip()}: {value.strip()}",
+                })
+
+            elif tag == "METER":
+                parsed_records.append({"tag": "DATA", "kind": "meter", "content": body})
 
             elif tag == "TABLE":
-                # Classify first row of a new block as a header when it looks like one:
-                # all-caps-starting tokens, multiple alignment spaces, no IP octets, no MACs
-                is_header = (
-                    entering_table
-                    and bool(re.match(r"^[A-Z][A-Za-z0-9 _/]{2,}", body))
-                    and len(re.findall(r" {2,}", body)) >= 1
-                    and not re.search(r"\d{1,3}\.\d{1,3}", body)
-                    and not re.search(r"[0-9A-Fa-f]{2}:", body)
-                )
+                cols = self._split_table_cols(body)
+                is_header = entering_table and self._looks_like_table_header(body)
                 if is_header:
-                    parts.append(self._table_header_html(body))
-                    # table_row_i stays 0 so first data row is even-shaded
+                    table_cols = len(cols)
+                    parsed_records.append({"tag": "DATA", "kind": "table_header", "columns": cols, "content": " | ".join(cols)})
                 else:
-                    parts.append(self._table_row_html(body, table_row_i))
+                    parsed_records.append({"tag": "DATA", "kind": "table_row", "index": table_row_i, "col_count": table_cols, "columns": cols, "content": " | ".join(cols)})
                     table_row_i += 1
 
-            else:  # LOG DATA INFO WARN ERROR
-                parts.append(self._tagged_card_html(tag, body))
+            else:
+                parsed_records.append({"tag": tag, "kind": "line", "content": body})
 
-            prev_tag = tag
-
-        # Close any table that was still open when the stream ended
-        if in_table:
-            parts.append(
-                "<div style='height:1px;background:#0d2d4a;margin-bottom:8px;'></div>"
-            )
-
-        self.recon_output.insertHtml("\n".join(parts))
-        self.recon_output.insertHtml("<br>")
-        self.recon_output.moveCursor(QTextCursor.End)
-
-    # ── One-off status card (errors, completion) ──────────────────────────
+        self._recon_records.extend(parsed_records)
+        self._refresh_recon_view()
 
     def _append_recon_card(self, tag: str, body: str, color: str) -> None:
-        safe = html_mod.escape(body).replace("\n", "<br>")
-        self.recon_output.insertHtml(
-            f"<div style='"
-            f"margin:6px 0;"
-            f"background:#07172a;"
-            f"border:1px solid #1a3f6a;"
-            f"border-left:3px solid {color};"
-            f"border-radius:6px;"
-            f"overflow:hidden;"
-            f"'>"
-            f"<span style='"
-            f"display:inline-block;"
-            f"background:{color}18;"
-            f"color:{color};"
-            f"font-family:Consolas,monospace;"
-            f"font-size:6.5pt;"
-            f"font-weight:900;"
-            f"padding:5px 10px;"
-            f"border-right:1px solid {color}22;"
-            f"margin-right:12px;"
-            f"min-width:38px;"
-            f"text-align:center;"
-            f"letter-spacing:1.5px;"
-            f"vertical-align:middle;"
-            f"'>{tag}</span>"
-            f"<span style='"
-            f"color:#d9efff;"
-            f"font-family:Consolas,monospace;"
-            f"font-size:9.5pt;"
-            f"line-height:1.9;"
-            f"vertical-align:middle;"
-            f"'>{safe}</span>"
-            f"</div>"
-        )
-        self.recon_output.insertHtml("<br>")
-        self.recon_output.moveCursor(QTextCursor.End)
+        self._recon_records.append({"tag": tag, "kind": "line", "content": body})
+        self._refresh_recon_view()
 
-    # ── Legacy compat stubs ───────────────────────────────────────────────
+    def _refresh_recon_view(self):
+        self._reset_recon_metrics()
+        self._update_recon_summary()
+        self.recon_output.clear()
+        if not self._recon_records:
+            return
+
+        parts: list[str] = []
+        prev_kind = None
+        in_table = False
+
+        for rec in self._recon_records:
+            if not self._passes_recon_filter(rec):
+                continue
+
+            kind = rec.get("kind", "")
+            tag = str(rec.get("tag", "LOG")).upper()
+            content = str(rec.get("content", ""))
+
+            if self._recon_collapse_sections and kind not in ("section", "divider"):
+                if tag not in ("WARN", "ERROR"):
+                    continue
+
+            if kind == "divider":
+                if in_table:
+                    parts.append("</tbody></table>")
+                    in_table = False
+                parts.append(self._divider_html())
+
+            elif kind == "section":
+                if in_table:
+                    parts.append("</tbody></table>")
+                    in_table = False
+                if prev_kind not in (None, "section", "divider"):
+                    parts.append("<div style='height:4px;'></div>")
+                parts.append(self._section_html(content))
+
+            elif kind == "kv":
+                if in_table:
+                    parts.append("</tbody></table>")
+                    in_table = False
+                label = str(rec.get("label", "")).strip()
+                value = str(rec.get("value", "")).strip()
+                parts.append(self._kv_html(f"{label}\t{value}"))
+
+            elif kind == "meter":
+                if in_table:
+                    parts.append("</tbody></table>")
+                    in_table = False
+                parts.append(self._meter_html(content))
+
+            elif kind == "table_header":
+                if in_table:
+                    parts.append("</tbody></table>")
+                parts.append(self._table_header_html(content))
+                in_table = True
+
+            elif kind == "table_row":
+                if not in_table:
+                    parts.append(
+                        "<table width='100%' cellspacing='0' cellpadding='0' style='"
+                        "margin:6px 0 0 0;"
+                        "border-collapse:collapse;"
+                        "border:1px solid #12385e;"
+                        "border-radius:6px;"
+                        "overflow:hidden;"
+                        "background:#091b31;"
+                        "'><tbody>"
+                    )
+                    in_table = True
+                idx = int(rec.get("index", 0))
+                col_count = int(rec.get("col_count", 0))
+                cols = rec.get("columns", [])
+                if isinstance(cols, list) and cols:
+                    row_text = "  ".join(str(c) for c in cols)
+                else:
+                    row_text = content
+                parts.append(self._table_row_html(row_text, idx, col_count))
+
+            else:
+                if in_table:
+                    parts.append("</tbody></table>")
+                    in_table = False
+                parts.append(self._tagged_card_html(tag, content))
+
+            prev_kind = kind
+
+        if in_table:
+            parts.append("</tbody></table>")
+
+        if parts:
+            self.recon_output.insertHtml("\n".join(parts))
+            self.recon_output.insertHtml("<br>")
+            if self._autoscroll_check.isChecked():
+                self.recon_output.moveCursor(QTextCursor.End)
+
+    # â”€â”€ Legacy compat stubs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _normalize_recon_stream(self, text: str) -> str:   return text
     def _parse_recon_line(self, line: str):                 return self._classify_line(line)
-    def _is_divider_line(self, text: str) -> bool:         return len(text) >= 6 and bool(re.fullmatch(r"[=\-─═_·\s]{6,}", text.strip()))
+    def _is_divider_line(self, text: str) -> bool:         return len(text) >= 6 and bool(re.fullmatch(r"[=\-_.\s]{6,}", text.strip()))
     def _is_section_title(self, text: str) -> bool:        tag, _ = self._classify_line(text); return tag == "SECTION"
