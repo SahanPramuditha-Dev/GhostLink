@@ -77,6 +77,7 @@ class BruteForceEngine:
         min_len = self.config["minlen"]
         max_len = self.config["maxlen"]
         wordlist = self.config.get("wordlist")
+        wordlist_inline = self.config.get("wordlist_inline") or []
         timeout = self.config.get("timeout", DEFAULT_TIMEOUT)
         skip_cached = self.config.get("skip_cached", True)
         configured_threads = int(self.config.get("threads", 1) or 1)
@@ -165,7 +166,17 @@ class BruteForceEngine:
                         if not enqueue_password(pwd):
                             return
 
-                    # Phase 2: wordlist candidates
+                    # Phase 2a: inline candidates from GUI textbox
+                    if wordlist_inline:
+                        for pwd in wordlist_inline:
+                            if not (min_len <= len(pwd) <= max_len):
+                                continue
+                            if not PasswordGenerator._allowed(pwd, charset):
+                                continue
+                            if not enqueue_password(pwd):
+                                return
+
+                    # Phase 2b: wordlist file candidates
                     if wordlist and wordlist.exists():
                         words = PasswordGenerator.from_wordlist(wordlist, min_len, max_len, charset)
                         for pwd in words:

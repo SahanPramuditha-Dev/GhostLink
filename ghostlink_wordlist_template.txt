@@ -1,0 +1,11 @@
+# GHOSTLINK Wordlist Template
+# One candidate password per line.
+# Remove comment lines before running if you want.
+password123
+welcome123
+letmein2026
+qwerty123
+admin@123
+wifi@home
+company2026
+summer2026!

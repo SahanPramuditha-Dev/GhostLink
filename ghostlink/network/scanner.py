@@ -7,6 +7,7 @@ Network scanning and detection.
 import re
 from typing import List, Optional
 from dataclasses import dataclass
+import platform
 
 from ..core.utils import run_cmd
 
@@ -23,12 +24,41 @@ class ScanResult:
 
 class WiFiScanner:
     """Wi-Fi network scanner"""
+
+    @staticmethod
+    def list_interfaces() -> List[str]:
+        """List available wireless interfaces."""
+        try:
+            if platform.system() == "Windows":
+                res = run_cmd(["netsh", "wlan", "show", "interfaces"], timeout=10)
+                if res.returncode != 0:
+                    return []
+                names = []
+                for line in res.stdout.splitlines():
+                    if line.strip().lower().startswith("name"):
+                        parts = line.split(":", 1)
+                        if len(parts) == 2:
+                            name = parts[1].strip()
+                            if name:
+                                names.append(name)
+                return sorted(set(names))
+            if platform.system() == "Linux":
+                res = run_cmd(["nmcli", "-t", "-f", "DEVICE,TYPE", "device"], timeout=10)
+                if res.returncode != 0:
+                    return []
+                names = []
+                for line in res.stdout.splitlines():
+                    parts = line.split(":")
+                    if len(parts) >= 2 and parts[1].strip().lower() == "wifi":
+                        names.append(parts[0].strip())
+                return sorted(set([n for n in names if n]))
+        except Exception:
+            return []
+        return []
     
     @staticmethod
     def scan(interface: Optional[str] = None) -> List[ScanResult]:
         """Scan for available networks"""
-        import platform
-        
         if platform.system() == "Windows":
             return WiFiScanner._scan_windows(interface)
         elif platform.system() == "Linux":

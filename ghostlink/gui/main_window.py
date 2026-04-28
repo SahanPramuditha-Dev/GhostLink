@@ -1,9 +1,12 @@
-import sys
+﻿import sys
 import os
 import ctypes
 import io
 import re
 import html as html_mod
+import csv
+from pathlib import Path
+from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -33,8 +36,11 @@ from PySide6.QtWidgets import (
     QSplitter,
     QScrollArea,
     QApplication,
+    QDialog,
+    QMenu,
+    QGraphicsOpacityEffect,
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QFont, QTextCursor
 
 from ghostlink.engine.profiles import PROFILES
@@ -47,6 +53,7 @@ from ghostlink.core.constants import (
 
 from .workers import ScanWorker, AttackWorker, ReconWorker
 from PySide6.QtGui import QIcon
+from ghostlink.network.scanner import WiFiScanner
 
 
 class MainWindow(QMainWindow):
@@ -73,6 +80,24 @@ class MainWindow(QMainWindow):
 
         self.attack_worker = None
         self.total_combinations = 0
+        self._scan_auto_timer = QTimer(self)
+        self._scan_auto_timer.timeout.connect(self._on_auto_rescan_tick)
+        self._scan_auto_enabled = False
+        self._last_selected_bssid = ""
+        self._scan_seen_at = {}
+        self._scan_new_bssids = set()
+        self._scan_cycle = 0
+        self._scan_prev_by_bssid = {}
+        self._pulse_new_on = False
+        self._scan_hint_shown = False
+        self._scan_density_mode = "comfortable"
+        self._scan_compare_enabled = True
+        self._scan_column_visibility = {
+            1: True, 4: True, 5: True, 6: True, 7: True, 8: True
+        }
+        self._scan_pulse_timer = QTimer(self)
+        self._scan_pulse_timer.timeout.connect(self._tick_new_pulse)
+        self._scan_pulse_timer.start(700)
         self._recon_records: list[dict] = []
         self._recon_filter_mode = "all"
         self._recon_collapse_sections = False
@@ -99,9 +124,9 @@ class MainWindow(QMainWindow):
         self.apply_theme()
         self.statusBar().showMessage("System ready")
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     # Chrome bar
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     def create_chrome_bar(self) -> QWidget:
         bar = QFrame()
@@ -129,9 +154,9 @@ class MainWindow(QMainWindow):
         layout.addWidget(t); layout.addWidget(s)
         return container
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     # Theme
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     def apply_theme(self):
         self.setStyleSheet("""
@@ -216,11 +241,56 @@ class MainWindow(QMainWindow):
         }
         QLineEdit, QSpinBox, QComboBox {
             background: #081a30; border: 1px solid #255785; border-radius: 8px;
-            color: #eff8ff; padding: 6px 8px; min-height: 20px;
+            color: #eff8ff; padding: 6px 36px 6px 10px; min-height: 20px;
         }
         QLineEdit:focus, QSpinBox:focus, QComboBox:focus,
         QTextEdit:focus, QTableWidget:focus { border: 1px solid #00b8ff; }
-        QComboBox::drop-down { border: none; width: 24px; }
+        QComboBox {
+            selection-background-color: #11406a;
+            selection-color: #f8fdff;
+        }
+        QComboBox::drop-down {
+            subcontrol-origin: padding;
+            subcontrol-position: top right;
+            width: 30px;
+            border-left: 1px solid #1b4f7b;
+            background: #0b223c;
+            border-top-right-radius: 8px;
+            border-bottom-right-radius: 8px;
+        }
+        QComboBox::down-arrow {
+            width: 0px;
+            height: 0px;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 7px solid #8fd2ff;
+            margin-top: 2px;
+        }
+        QComboBox::down-arrow:on { margin-top: 4px; }
+        QComboBox QAbstractItemView {
+            background: #07182c;
+            border: 1px solid #2a6da1;
+            border-radius: 10px;
+            outline: 0;
+            padding: 6px;
+            color: #e7f4ff;
+            selection-background-color: #0f3a64;
+            selection-color: #ffffff;
+        }
+        QComboBox QAbstractItemView::item {
+            min-height: 32px;
+            padding: 7px 10px;
+            border-radius: 7px;
+            margin: 1px 0;
+        }
+        QComboBox QAbstractItemView::item:hover {
+            background: #0d3154;
+            color: #f6fcff;
+        }
+        QComboBox QAbstractItemView::item:selected {
+            background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #0f3d68, stop:1 #13507f);
+            border: 1px solid #3b93d2;
+        }
         QCheckBox { spacing: 8px; color: #d7ebff; }
         QCheckBox::indicator {
             width: 16px; height: 16px; border-radius: 4px;
@@ -356,6 +426,30 @@ class MainWindow(QMainWindow):
             border-color: #3a6a9a;
             color: #c0ddf0;
         }
+        QPushButton[role="scan_filter"] {
+            background: #061326;
+            border: 1px solid #3a5572;
+            border-radius: 10px;
+            color: #e6f4ff;
+            font-size: 9pt;
+            font-weight: 800;
+            letter-spacing: 1px;
+            padding: 8px 16px;
+            min-height: 22px;
+        }
+        QPushButton[role="scan_filter"]:hover {
+            background: #0b2341;
+            border-color: #5f86ad;
+        }
+        QPushButton[role="scan_filter"]:checked {
+            background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #0c3c65, stop:1 #11619a);
+            border: 1px solid #5ec0ff;
+            color: #ffffff;
+        }
+        QPushButton[role="scan_filter"]:checked:hover {
+            background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #0e4a79, stop:1 #1678be);
+            border: 1px solid #7cd0ff;
+        }
         QPushButton[role="clear_btn"] {
             background: #1e0a0a;
             border: 1px solid #5a2020;
@@ -374,43 +468,199 @@ class MainWindow(QMainWindow):
         }
         """)
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    # Tab 1 â€” Scan
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    # Tab 1 Ã¢â‚¬â€ Scan
+    # Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     def create_scan_tab(self):
         tab = QWidget(); self.tabs.addTab(tab, "SCAN & SELECT")
         layout = QVBoxLayout(tab); layout.setContentsMargins(14, 14, 14, 14); layout.setSpacing(12)
         layout.addWidget(self.make_tab_header("Target Discovery", "Scan nearby Wi-Fi networks and select a target to attack."))
 
+        summary = QHBoxLayout(); summary.setSpacing(10)
+        self.scan_total_label = QLabel("Total: 0"); self.scan_total_label.setProperty("role", "metric"); summary.addWidget(self.scan_total_label)
+        self.scan_open_label = QLabel("Open: 0"); self.scan_open_label.setProperty("role", "metric"); summary.addWidget(self.scan_open_label)
+        self.scan_secure_label = QLabel("WPA2/WPA3: 0"); self.scan_secure_label.setProperty("role", "metric"); summary.addWidget(self.scan_secure_label)
+        self.scan_strong_label = QLabel("Strong (>70%): 0"); self.scan_strong_label.setProperty("role", "metric"); summary.addWidget(self.scan_strong_label)
+        summary.addStretch()
+        layout.addLayout(summary)
+
         row = QHBoxLayout(); row.setSpacing(10)
+        self.interface_combo = QComboBox()
+        self.interface_combo.setMinimumWidth(190)
+        row.addWidget(self.interface_combo)
+        self.refresh_iface_btn = QPushButton("REFRESH IFACES")
+        self.refresh_iface_btn.setProperty("variant", "secondary")
+        self.refresh_iface_btn.clicked.connect(self.refresh_interfaces)
+        row.addWidget(self.refresh_iface_btn)
+        self.iface_health_label = QLabel("Interface: unknown")
+        self.iface_health_label.setProperty("role", "meta")
+        row.addWidget(self.iface_health_label)
         self.scan_btn = QPushButton("SCAN NETWORKS"); self.scan_btn.clicked.connect(self.start_scan); row.addWidget(self.scan_btn)
+        self.scan_btn.setProperty("variant", "success")
         self.debug_btn = QPushButton("DEBUG SCANNER"); self.debug_btn.setProperty("variant", "secondary"); self.debug_btn.clicked.connect(self.debug_scanner); row.addWidget(self.debug_btn)
+        self.auto_rescan_check = QCheckBox("Auto-rescan")
+        self.auto_rescan_check.toggled.connect(self.toggle_auto_rescan)
+        row.addWidget(self.auto_rescan_check)
+        self.auto_rescan_interval = QSpinBox()
+        self.auto_rescan_interval.setRange(5, 300)
+        self.auto_rescan_interval.setValue(20)
+        self.auto_rescan_interval.setSuffix(" s")
+        self.auto_rescan_interval.valueChanged.connect(self.update_auto_rescan_interval)
+        row.addWidget(self.auto_rescan_interval)
+        self.density_combo = QComboBox()
+        self.density_combo.addItem("Comfortable", "comfortable")
+        self.density_combo.addItem("Compact", "compact")
+        self.density_combo.currentIndexChanged.connect(self.update_scan_density)
+        row.addWidget(self.density_combo)
+        self.compare_check = QCheckBox("Compare scans")
+        self.compare_check.setChecked(True)
+        self.compare_check.toggled.connect(self.toggle_compare_scans)
+        row.addWidget(self.compare_check)
+        self.last_scan_label = QLabel("Last scan: never"); self.last_scan_label.setProperty("role", "meta"); row.addWidget(self.last_scan_label)
         row.addStretch(); layout.addLayout(row)
 
-        self.scan_table = QTableWidget(0, 3)
+        filter_row = QHBoxLayout(); filter_row.setSpacing(8)
+        self.scan_search_edit = QLineEdit()
+        self.scan_search_edit.setPlaceholderText("Search SSID / BSSID...")
+        self.scan_search_edit.textChanged.connect(self.apply_scan_filters)
+        filter_row.addWidget(self.scan_search_edit, 1)
+        self.scan_filter_buttons = {}
+        for key, label in [
+            ("all", "ALL"),
+            ("strong", "STRONG"),
+            ("open", "OPEN"),
+            ("secure", "WPA2/WPA3"),
+            ("band5", "5 GHZ"),
+        ]:
+            btn = QPushButton(label)
+            btn.setProperty("role", "scan_filter")
+            btn.setCheckable(True)
+            btn.clicked.connect(lambda checked, k=key: self.set_scan_filter(k))
+            self.scan_filter_buttons[key] = btn
+            filter_row.addWidget(btn)
+        self.scan_filter_buttons["all"].setChecked(True)
+        self.filter_preset_combo = QComboBox()
+        self.filter_preset_combo.addItem("Preset: Custom", "custom")
+        self.filter_preset_combo.addItem("Preset: Audit mode", "audit")
+        self.filter_preset_combo.addItem("Preset: Open only", "open_only")
+        self.filter_preset_combo.addItem("Preset: 5GHz strong", "5g_strong")
+        self.filter_preset_combo.currentIndexChanged.connect(self.apply_filter_preset)
+        filter_row.addWidget(self.filter_preset_combo)
+        self.columns_btn = QPushButton("COLUMNS")
+        self.columns_btn.setProperty("variant", "secondary")
+        self.columns_btn.clicked.connect(self.open_column_menu)
+        filter_row.addWidget(self.columns_btn)
+        self.show_hidden_check = QCheckBox("Show hidden")
+        self.show_hidden_check.toggled.connect(self.apply_scan_filters)
+        filter_row.addWidget(self.show_hidden_check)
+        layout.addLayout(filter_row)
+
+        table_shell = QHBoxLayout()
+        table_shell.setSpacing(10)
+        self.scan_table = QTableWidget(0, 9)
         self.scan_table.setProperty("role", "scan_table")
-        self.scan_table.setHorizontalHeaderLabels(["SSID", "SIGNAL", "SECURITY"])
+        self.scan_table.setHorizontalHeaderLabels(["SSID", "STATUS", "SIGNAL", "SECURITY", "RISK", "BAND", "CHANNEL", "CONGESTION", "BSSID / VENDOR"])
         self.scan_table.verticalHeader().setVisible(False)
         self.scan_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.scan_table.setSelectionMode(QTableWidget.SingleSelection)
         self.scan_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.scan_table.setShowGrid(True); self.scan_table.setAlternatingRowColors(True)
         self.scan_table.setWordWrap(False)
-        self.scan_table.verticalHeader().setDefaultSectionSize(40)
+        self.scan_table.verticalHeader().setDefaultSectionSize(52)
+        self.scan_table.setSortingEnabled(True)
         self.scan_table.horizontalHeader().setStretchLastSection(False)
-        self.scan_table.horizontalHeader().setMinimumSectionSize(90)
+        self.scan_table.horizontalHeader().setMinimumSectionSize(70)
         self.scan_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.scan_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Fixed)
         self.scan_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Fixed)
-        self.scan_table.setColumnWidth(1, 230)
-        self.scan_table.setColumnWidth(2, 190)
-        self.scan_table.setMinimumHeight(260); layout.addWidget(self.scan_table)
+        self.scan_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Fixed)
+        self.scan_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Fixed)
+        self.scan_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.Fixed)
+        self.scan_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.Fixed)
+        self.scan_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.Fixed)
+        self.scan_table.horizontalHeader().setSectionResizeMode(8, QHeaderView.Stretch)
+        self.scan_table.setColumnWidth(1, 165)
+        self.scan_table.setColumnWidth(2, 155)
+        self.scan_table.setColumnWidth(3, 175)
+        self.scan_table.setColumnWidth(4, 110)
+        self.scan_table.setColumnWidth(5, 95)
+        self.scan_table.setColumnWidth(6, 80)
+        self.scan_table.setColumnWidth(7, 130)
+        self.scan_table.itemSelectionChanged.connect(self._sync_scan_selection_state)
+        self.scan_table.itemDoubleClicked.connect(self.on_scan_row_double_clicked)
+        self.scan_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.scan_table.customContextMenuRequested.connect(self.open_scan_context_menu)
+        self.scan_table.setMinimumHeight(260)
+        table_shell.addWidget(self.scan_table, 4)
+
+        self.scan_side_panel = QFrame()
+        self.scan_side_panel.setProperty("role", "recon_summary")
+        self.scan_side_panel.setMinimumWidth(250)
+        side_l = QVBoxLayout(self.scan_side_panel)
+        side_l.setContentsMargins(10, 10, 10, 10)
+        side_l.setSpacing(8)
+        t = QLabel("Selected Network")
+        t.setProperty("role", "meta")
+        side_l.addWidget(t)
+        self.sel_ssid = QLabel("SSID: -"); self.sel_ssid.setProperty("role", "summary_card"); side_l.addWidget(self.sel_ssid)
+        self.sel_bssid = QLabel("BSSID: -"); self.sel_bssid.setProperty("role", "summary_card"); side_l.addWidget(self.sel_bssid)
+        self.sel_vendor = QLabel("Vendor: -"); self.sel_vendor.setProperty("role", "summary_card"); side_l.addWidget(self.sel_vendor)
+        self.sel_risk = QLabel("Risk: -"); self.sel_risk.setProperty("role", "summary_card"); side_l.addWidget(self.sel_risk)
+        self.sel_channel = QLabel("Channel: -"); self.sel_channel.setProperty("role", "summary_card"); side_l.addWidget(self.sel_channel)
+        self.sel_seen = QLabel("Last seen: -"); self.sel_seen.setProperty("role", "summary_card"); side_l.addWidget(self.sel_seen)
+        side_actions = QHBoxLayout()
+        self.side_set_target_btn = QPushButton("SET TARGET")
+        self.side_set_target_btn.setProperty("variant", "success")
+        self.side_set_target_btn.clicked.connect(self.select_target)
+        self.side_copy_bssid_btn = QPushButton("COPY BSSID")
+        self.side_copy_bssid_btn.setProperty("variant", "secondary")
+        self.side_copy_bssid_btn.clicked.connect(self.copy_selected_bssid)
+        side_actions.addWidget(self.side_set_target_btn)
+        side_actions.addWidget(self.side_copy_bssid_btn)
+        side_l.addLayout(side_actions)
+        side_l.addStretch()
+        table_shell.addWidget(self.scan_side_panel, 1)
+        layout.addLayout(table_shell)
+
+        self.scan_footer_stats = QLabel("Delta: +0 / -0 / ~0")
+        self.scan_footer_stats.setProperty("role", "meta")
+        layout.addWidget(self.scan_footer_stats)
+
+        self.empty_state_frame = QFrame()
+        self.empty_state_frame.setProperty("role", "recon_summary")
+        ef = QVBoxLayout(self.empty_state_frame)
+        ef.setContentsMargins(18, 14, 18, 14)
+        ef.setSpacing(8)
+        empty_title = QLabel("No Networks Visible")
+        empty_title.setStyleSheet("font-size:14px; font-weight:800; color:#e8f6ff;")
+        empty_text = QLabel("1) Run as Administrator\n2) Ensure Wi-Fi adapter is enabled\n3) Choose correct interface")
+        empty_text.setProperty("role", "meta")
+        self.empty_retry_btn = QPushButton("RETRY SCAN")
+        self.empty_retry_btn.setProperty("variant", "success")
+        self.empty_retry_btn.clicked.connect(self.start_scan)
+        ef.addWidget(empty_title)
+        ef.addWidget(empty_text)
+        ef.addWidget(self.empty_retry_btn, 0, Qt.AlignLeft)
+        self.empty_state_frame.hide()
+        layout.addWidget(self.empty_state_frame)
 
         ar = QHBoxLayout(); ar.setSpacing(10)
-        self.select_btn = QPushButton("SELECT TARGET"); self.select_btn.setProperty("variant", "success")
+        self.select_btn = QPushButton("SET AS TARGET"); self.select_btn.setProperty("variant", "success")
         self.select_btn.clicked.connect(self.select_target); self.select_btn.setEnabled(False)
-        ar.addWidget(self.select_btn); ar.addStretch(); layout.addLayout(ar)
+        self.rescan_btn = QPushButton("RESCAN"); self.rescan_btn.setProperty("variant", "secondary"); self.rescan_btn.clicked.connect(self.start_scan)
+        self.export_scan_btn = QPushButton("EXPORT CSV"); self.export_scan_btn.setProperty("variant", "secondary"); self.export_scan_btn.clicked.connect(self.export_scan_csv)
+        self.export_scan_json_btn = QPushButton("EXPORT JSON"); self.export_scan_json_btn.setProperty("variant", "secondary"); self.export_scan_json_btn.clicked.connect(self.export_scan_json)
+        self.copy_scan_btn = QPushButton("COPY TABLE"); self.copy_scan_btn.setProperty("variant", "secondary"); self.copy_scan_btn.clicked.connect(self.copy_scan_results)
+        ar.addWidget(self.select_btn)
+        ar.addWidget(self.rescan_btn)
+        ar.addWidget(self.export_scan_btn)
+        ar.addWidget(self.export_scan_json_btn)
+        ar.addWidget(self.copy_scan_btn)
+        ar.addStretch()
+        self.scan_selection_label = QLabel("Selected: none"); self.scan_selection_label.setProperty("role", "meta")
+        ar.addWidget(self.scan_selection_label)
+        layout.addLayout(ar)
 
         strip = QFrame(); strip.setProperty("role", "target_strip")
         sl = QHBoxLayout(strip); sl.setContentsMargins(12, 10, 12, 10)
@@ -418,29 +668,111 @@ class MainWindow(QMainWindow):
         self.target_state_right = QLabel("None");              self.target_state_right.setProperty("role", "target_right")
         sl.addWidget(self.target_state_left); sl.addStretch(); sl.addWidget(self.target_state_right)
         layout.addWidget(strip)
+        self.active_scan_filter = "all"
+        self.filtered_scan_results = []
+        self.refresh_interfaces()
+        self._maybe_show_scan_hints()
+        self._sync_scan_selection_state()
 
     def _set_scan_placeholder(self, text: str):
         self.scan_table.setRowCount(1)
-        for c, v in enumerate([text, "", ""]):
+        for c, v in enumerate([text, "", "", "", "", "", "", "", ""]):
             item = QTableWidgetItem(v)
             item.setTextAlignment(Qt.AlignCenter if c else (Qt.AlignVCenter | Qt.AlignLeft))
             self.scan_table.setItem(0, c, item)
+        self.select_btn.setEnabled(False)
+        self.scan_selection_label.setText("Selected: none")
 
     def _security_item(self, security: str) -> QTableWidgetItem:
         sec = security.upper()
         if "WPA3" in sec:
-            label, fg, bg = "WPA3  STRONG", Qt.cyan, Qt.darkCyan
+            label, rank = "WPA3", 4
         elif "WPA2" in sec:
-            label, fg, bg = "WPA2  SECURE", Qt.green, Qt.darkGreen
+            label, rank = "WPA2", 3
         elif "OPEN" in sec:
-            label, fg, bg = "OPEN  RISK", Qt.yellow, Qt.darkYellow
+            label, rank = "OPEN", 1
         else:
-            label, fg, bg = sec, Qt.white, Qt.darkBlue
+            label, rank = (sec or "UNKNOWN"), 2
         item = QTableWidgetItem(label)
         item.setTextAlignment(Qt.AlignCenter)
-        item.setForeground(fg)
-        item.setBackground(bg)
+        item.setData(Qt.UserRole, rank)
         return item
+
+    def _security_cell_widget(self, security: str) -> QWidget:
+        sec = (security or "Unknown").upper()
+        if "WPA3" in sec:
+            text, icon, fg, border, bg = "WPA3 SECURE", "LOCK", "#53e2ff", "#2aa7d4", "#0e2c3b"
+        elif "WPA2" in sec:
+            text, icon, fg, border, bg = "WPA2 SECURE", "LOCK", "#52ffb1", "#25b874", "#0f3326"
+        elif "OPEN" in sec:
+            text, icon, fg, border, bg = "OPEN RISK", "WARN", "#ffd486", "#d08a2a", "#3a2b14"
+        else:
+            text, icon, fg, border, bg = sec, "INFO", "#c0d7ea", "#4d6b88", "#152434"
+
+        chip = QLabel(f"{icon}  {text}")
+        chip.setAlignment(Qt.AlignCenter)
+        chip.setStyleSheet(
+            "QLabel {"
+            f"color:{fg};"
+            f"background:{bg};"
+            f"border:1px solid {border};"
+            "border-radius:8px;"
+            "padding:5px 10px;"
+            "font-size:8.5pt;"
+            "font-weight:800;"
+            "letter-spacing:0.6px;"
+            "}"
+        )
+        holder = QWidget()
+        lay = QHBoxLayout(holder)
+        lay.setContentsMargins(10, 4, 10, 4)
+        lay.addWidget(chip)
+        return holder
+
+    def _chip_widget(self, text: str, fg: str, border: str, bg: str) -> QWidget:
+        chip = QLabel(text)
+        chip.setAlignment(Qt.AlignCenter)
+        chip.setStyleSheet(
+            "QLabel {"
+            f"color:{fg};"
+            f"background:{bg};"
+            f"border:1px solid {border};"
+            "border-radius:8px;"
+            "padding:4px 8px;"
+            "font-size:8pt;"
+            "font-weight:800;"
+            "letter-spacing:0.5px;"
+            "}"
+        )
+        holder = QWidget()
+        lay = QHBoxLayout(holder)
+        lay.setContentsMargins(8, 4, 8, 4)
+        lay.addWidget(chip)
+        return holder
+
+    def _status_cell_widget(self, status: str) -> QWidget:
+        up = (status or "").upper()
+        if up.startswith("NEW"):
+            if self._pulse_new_on:
+                return self._chip_widget(status, "#b7fff1", "#54d8bf", "#185347")
+            return self._chip_widget(status, "#85ffe7", "#2eae97", "#113730")
+        return self._chip_widget(status, "#b9d5eb", "#4f6f8b", "#142536")
+
+    def _risk_cell_widget(self, risk: str) -> QWidget:
+        r = (risk or "").upper()
+        if r == "HIGH":
+            return self._chip_widget("HIGH", "#ffb4bf", "#b44a61", "#3f1b25")
+        if r == "MED":
+            return self._chip_widget("MED", "#ffd58e", "#b57b22", "#3f2e15")
+        return self._chip_widget("LOW", "#a6ffd0", "#3c9a6a", "#123325")
+
+    def _congestion_cell_widget(self, congestion: str) -> QWidget:
+        c = (congestion or "").upper()
+        if c == "CROWDED":
+            return self._chip_widget("CROWDED", "#ffb7c1", "#b94f67", "#401d27")
+        if c == "BUSY":
+            return self._chip_widget("BUSY", "#ffd99d", "#bc8330", "#423117")
+        return self._chip_widget("CLEAR", "#aef4ff", "#3a8ea0", "#13313a")
 
     def _signal_cell_widget(self, signal: int) -> QWidget:
         signal = max(0, min(100, int(signal)))
@@ -495,6 +827,437 @@ class MainWindow(QMainWindow):
         root_layout.addStretch()
         return root
 
+    def _signal_item(self, signal: int) -> QTableWidgetItem:
+        signal = max(0, min(100, int(signal)))
+        item = QTableWidgetItem(f"{signal:03d}%")
+        item.setTextAlignment(Qt.AlignCenter)
+        item.setData(Qt.UserRole, signal)
+        if signal >= 75:
+            item.setForeground(Qt.green)
+        elif signal >= 45:
+            item.setForeground(Qt.yellow)
+        else:
+            item.setForeground(Qt.red)
+        return item
+
+    def _signal_cell_widget(self, signal: int) -> QWidget:
+        signal = max(0, min(100, int(signal)))
+        if signal >= 80:
+            tone = ("#2dff98", "#00d97a", "#113a2d", "EXCELLENT")
+        elif signal >= 60:
+            tone = ("#5cd8ff", "#17b1ff", "#0f3044", "STRONG")
+        elif signal >= 40:
+            tone = ("#ffd86b", "#ffb445", "#3d2e14", "FAIR")
+        else:
+            tone = ("#ff9a9a", "#ff5f7a", "#44202a", "WEAK")
+        left, right, chip_bg, tier = tone
+
+        root = QWidget()
+        root_layout = QHBoxLayout(root)
+        root_layout.setContentsMargins(10, 4, 10, 4)
+        root_layout.setSpacing(8)
+
+        pct = QLabel(f"{signal:02d}%")
+        pct.setStyleSheet(
+            "QLabel {"
+            f"color:{left};"
+            "font-weight:900;"
+            "font-size:10pt;"
+            "letter-spacing:0.7px;"
+            "}"
+        )
+        chip = QLabel(tier)
+        chip.setStyleSheet(
+            "QLabel {"
+            f"background:{chip_bg};"
+            f"border:1px solid {right};"
+            "border-radius:7px;"
+            f"color:{left};"
+            "font-size:6.8pt;"
+            "font-weight:800;"
+            "padding:1px 8px;"
+            "letter-spacing:0.6px;"
+            "}"
+        )
+        chip.setMinimumWidth(74)
+        chip.setAlignment(Qt.AlignCenter)
+        root.setToolTip(
+            "Signal quality guide:\n"
+            "80-100: excellent stability\n"
+            "60-79: strong and reliable\n"
+            "40-59: fair/intermittent\n"
+            "0-39: weak"
+        )
+        root_layout.addWidget(pct)
+        root_layout.addWidget(chip)
+        root_layout.addStretch()
+        return root
+
+    def _tick_new_pulse(self):
+        self._pulse_new_on = not self._pulse_new_on
+        if self.filtered_scan_results:
+            self._render_scan_table(self.filtered_scan_results)
+
+    def _animate_scan_refresh(self):
+        effect = QGraphicsOpacityEffect(self.scan_table.viewport())
+        self.scan_table.viewport().setGraphicsEffect(effect)
+        anim = QPropertyAnimation(effect, b"opacity", self)
+        anim.setDuration(220)
+        anim.setStartValue(0.25)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
+        anim.start()
+        self._scan_refresh_anim = anim
+
+    def _maybe_show_scan_hints(self):
+        if self._scan_hint_shown:
+            return
+        self._scan_hint_shown = True
+        QMessageBox.information(
+            self,
+            "Scan Tips",
+            "Tips:\n- Double-click row to set target.\n- Right-click a row for quick actions.\n- Press Ctrl+F to focus search.",
+        )
+
+    def toggle_compare_scans(self, enabled: bool):
+        self._scan_compare_enabled = bool(enabled)
+        self.apply_scan_filters()
+
+    def update_scan_density(self):
+        mode = self.density_combo.currentData()
+        self._scan_density_mode = mode or "comfortable"
+        self.scan_table.verticalHeader().setDefaultSectionSize(44 if self._scan_density_mode == "compact" else 52)
+        self._render_scan_table(self.filtered_scan_results)
+
+    def apply_filter_preset(self):
+        preset = self.filter_preset_combo.currentData()
+        if preset == "audit":
+            self.show_hidden_check.setChecked(True)
+            self.set_scan_filter("all")
+        elif preset == "open_only":
+            self.show_hidden_check.setChecked(True)
+            self.set_scan_filter("open")
+        elif preset == "5g_strong":
+            self.show_hidden_check.setChecked(False)
+            self.set_scan_filter("band5")
+            self.scan_search_edit.setText("")
+        elif preset == "custom":
+            return
+        self.apply_scan_filters()
+
+    def open_column_menu(self):
+        menu = QMenu(self)
+        col_map = {
+            1: "Status",
+            4: "Risk",
+            5: "Band",
+            6: "Channel",
+            7: "Congestion",
+            8: "BSSID/Vendor",
+        }
+        for col, label in col_map.items():
+            action = menu.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(not self.scan_table.isColumnHidden(col))
+            action.toggled.connect(lambda checked, c=col: self.scan_table.setColumnHidden(c, not checked))
+        menu.exec(self.columns_btn.mapToGlobal(self.columns_btn.rect().bottomLeft()))
+
+    def copy_selected_bssid(self):
+        row = self.scan_table.currentRow()
+        net = self._network_from_row(row)
+        if not net:
+            return
+        QApplication.clipboard().setText(net.bssid or "")
+        self.statusBar().showMessage("BSSID copied to clipboard")
+
+    def _channel_to_band(self, channel: int) -> str:
+        if channel >= 36:
+            return "5 GHz"
+        if 1 <= channel <= 14:
+            return "2.4 GHz"
+        return "Unknown"
+
+    def _vendor_from_bssid(self, bssid: str) -> str:
+        oui = (bssid or "").upper().replace("-", ":")
+        if len(oui) < 8:
+            return "Unknown"
+        prefix = oui[:8]
+        vendors = {
+            "00:1A:11": "Cisco",
+            "00:26:5A": "Apple",
+            "3C:84:6A": "TP-Link",
+            "D8:0D:17": "Huawei",
+            "F4:F2:6D": "Samsung",
+            "FC:FB:FB": "Google",
+            "B8:27:EB": "Raspberry Pi",
+            "9C:3D:CF": "Xiaomi",
+        }
+        return vendors.get(prefix, "Unknown")
+
+    def _risk_label(self, signal: int, security: str) -> str:
+        sec = (security or "").upper()
+        score = 0
+        if "OPEN" in sec:
+            score += 2
+        elif "WPA2" in sec:
+            score += 1
+        if signal >= 70:
+            score += 1
+        if score >= 3:
+            return "HIGH"
+        if score == 2:
+            return "MED"
+        return "LOW"
+
+    def _status_label(self, net) -> str:
+        bssid = (net.bssid or "").strip().lower()
+        if self._scan_compare_enabled and bssid and bssid in self._scan_prev_by_bssid:
+            prev_signal = int(self._scan_prev_by_bssid[bssid].get("signal", int(net.signal or 0)))
+            delta = int(net.signal or 0) - prev_signal
+            if abs(delta) >= 3:
+                sign = "+" if delta > 0 else ""
+                return f"Seen {sign}{delta}%"
+        if bssid in self._scan_new_bssids:
+            return "NEW now"
+        ts = self._scan_seen_at.get(bssid)
+        if not ts:
+            return "Seen now"
+        return f"Seen {ts.strftime('%H:%M:%S')}"
+
+    def _congestion_map(self, networks):
+        counts = {}
+        for net in networks:
+            ch = int(net.channel or 0)
+            if ch <= 0:
+                continue
+            counts[ch] = counts.get(ch, 0) + 1
+        labels = {}
+        for ch, c in counts.items():
+            if c >= 4:
+                labels[ch] = "Crowded"
+            elif c >= 2:
+                labels[ch] = "Busy"
+            else:
+                labels[ch] = "Clear"
+        return labels
+
+    def set_scan_filter(self, filter_key: str):
+        self.active_scan_filter = filter_key
+        for key, btn in self.scan_filter_buttons.items():
+            btn.setChecked(key == filter_key)
+        self.apply_scan_filters()
+
+    def apply_scan_filters(self):
+        query = self.scan_search_edit.text().strip().lower() if hasattr(self, "scan_search_edit") else ""
+        filtered = []
+        for net in self.scan_results:
+            sec = (net.security or "").upper()
+            band = self._channel_to_band(int(net.channel or 0))
+            if self.active_scan_filter == "strong" and int(net.signal or 0) <= 70:
+                continue
+            if self.active_scan_filter == "open" and "OPEN" not in sec:
+                continue
+            if self.active_scan_filter == "secure" and ("WPA2" not in sec and "WPA3" not in sec):
+                continue
+            if self.active_scan_filter == "band5" and band != "5 GHz":
+                continue
+            ssid_l = (net.ssid or "").lower()
+            bssid_l = (net.bssid or "").lower()
+            if not self.show_hidden_check.isChecked() and (net.hidden or not (net.ssid or "").strip()):
+                continue
+            if query and query not in ssid_l and query not in bssid_l:
+                continue
+            filtered.append(net)
+        self.filtered_scan_results = filtered
+        self._render_scan_table(filtered)
+        self._sync_scan_selection_state()
+
+    def _render_scan_table(self, networks):
+        self.scan_table.setSortingEnabled(False)
+        self.scan_table.setRowCount(0)
+        if not networks:
+            self._set_scan_placeholder("No networks match current filters.")
+            self.empty_state_frame.show()
+            self.scan_table.setSortingEnabled(True)
+            return
+        self.empty_state_frame.hide()
+        congestion = self._congestion_map(networks)
+        self.scan_table.setRowCount(len(networks))
+        for row, net in enumerate(networks):
+            ssid = net.ssid or "<hidden>"
+            ssid_item = QTableWidgetItem(ssid)
+            ssid_item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+            if net.hidden or ssid == "<hidden>":
+                ssid_item.setForeground(Qt.yellow)
+            self.scan_table.setItem(row, 0, ssid_item)
+            status_text = self._status_label(net)
+            status_item = QTableWidgetItem(status_text)
+            status_item.setForeground(Qt.transparent)
+            self.scan_table.setItem(row, 1, status_item)
+            self.scan_table.setCellWidget(row, 1, self._status_cell_widget(status_text))
+            self.scan_table.setItem(row, 2, self._signal_item(net.signal))
+            self.scan_table.setCellWidget(row, 2, self._signal_cell_widget(net.signal))
+            self.scan_table.setItem(row, 3, self._security_item(net.security))
+            self.scan_table.setCellWidget(row, 3, self._security_cell_widget(net.security))
+            risk = self._risk_label(int(net.signal or 0), net.security or "")
+            risk_item = QTableWidgetItem(risk)
+            risk_item.setTextAlignment(Qt.AlignCenter)
+            risk_item.setForeground(Qt.transparent)
+            self.scan_table.setItem(row, 4, risk_item)
+            self.scan_table.setCellWidget(row, 4, self._risk_cell_widget(risk))
+            band_item = QTableWidgetItem(self._channel_to_band(int(net.channel or 0)))
+            band_item.setTextAlignment(Qt.AlignCenter)
+            self.scan_table.setItem(row, 5, band_item)
+            ch_item = QTableWidgetItem(str(int(net.channel or 0)))
+            ch_item.setTextAlignment(Qt.AlignCenter)
+            self.scan_table.setItem(row, 6, ch_item)
+            congest_text = congestion.get(int(net.channel or 0), "-")
+            congest_item = QTableWidgetItem(congest_text)
+            congest_item.setTextAlignment(Qt.AlignCenter)
+            congest_item.setForeground(Qt.transparent)
+            self.scan_table.setItem(row, 7, congest_item)
+            self.scan_table.setCellWidget(row, 7, self._congestion_cell_widget(congest_text))
+            vendor = self._vendor_from_bssid(net.bssid or "")
+            bssid_item = QTableWidgetItem(f"{net.bssid or '-'}  |  {vendor}")
+            bssid_item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+            self.scan_table.setItem(row, 8, bssid_item)
+        self.scan_table.sortItems(2, Qt.DescendingOrder)
+        self.scan_table.setSortingEnabled(True)
+        self._animate_scan_refresh()
+
+    def _sync_scan_selection_state(self):
+        row = self.scan_table.currentRow() if hasattr(self, "scan_table") else -1
+        net = self._network_from_row(row)
+        valid = net is not None
+        self.select_btn.setEnabled(valid)
+        if not valid:
+            self.scan_selection_label.setText("Selected: none")
+            self.sel_ssid.setText("SSID: -")
+            self.sel_bssid.setText("BSSID: -")
+            self.sel_vendor.setText("Vendor: -")
+            self.sel_risk.setText("Risk: -")
+            self.sel_channel.setText("Channel: -")
+            self.sel_seen.setText("Last seen: -")
+            return
+        self.scan_selection_label.setText(f"Selected: {net.ssid or '<hidden>'} ({net.signal}%)")
+        self._last_selected_bssid = (net.bssid or "").strip().lower()
+        self.sel_ssid.setText(f"SSID: {net.ssid or '<hidden>'}")
+        self.sel_bssid.setText(f"BSSID: {net.bssid or '-'}")
+        self.sel_vendor.setText(f"Vendor: {self._vendor_from_bssid(net.bssid or '')}")
+        self.sel_risk.setText(f"Risk: {self._risk_label(int(net.signal or 0), net.security or '')}")
+        self.sel_channel.setText(f"Channel: {int(net.channel or 0)} ({self._channel_to_band(int(net.channel or 0))})")
+        seen = self._scan_seen_at.get((net.bssid or "").strip().lower())
+        self.sel_seen.setText(f"Last seen: {seen.strftime('%H:%M:%S') if seen else '-'}")
+
+    def _update_scan_summary(self, networks):
+        total = len(networks)
+        open_count = sum(1 for n in networks if "OPEN" in (n.security or "").upper())
+        secure_count = sum(1 for n in networks if ("WPA2" in (n.security or "").upper() or "WPA3" in (n.security or "").upper()))
+        strong_count = sum(1 for n in networks if int(n.signal or 0) > 70)
+        self.scan_total_label.setText(f"Total: {total}")
+        self.scan_open_label.setText(f"Open: {open_count}")
+        self.scan_secure_label.setText(f"WPA2/WPA3: {secure_count}")
+        self.scan_strong_label.setText(f"Strong (>70%): {strong_count}")
+
+    def on_scan_row_double_clicked(self, *_args):
+        if self.select_btn.isEnabled():
+            self.select_target()
+            self.tabs.setCurrentIndex(1)
+
+    def _network_from_row(self, row: int):
+        if row < 0:
+            return None
+        bssid_item = self.scan_table.item(row, 8)
+        if not bssid_item:
+            return None
+        bssid = (bssid_item.text() or "").split("|", 1)[0].strip().lower()
+        if not bssid or bssid == "-":
+            ssid_item = self.scan_table.item(row, 0)
+            ssid = (ssid_item.text() if ssid_item else "").strip()
+            for net in self.filtered_scan_results:
+                if (net.ssid or "<hidden>") == ssid:
+                    return net
+            return None
+        for net in self.filtered_scan_results:
+            if (net.bssid or "").strip().lower() == bssid:
+                return net
+        return None
+
+    def _restore_scan_selection(self):
+        target = (self.config.get("target_bssid") or self._last_selected_bssid or "").strip().lower()
+        if not target:
+            return
+        for row in range(self.scan_table.rowCount()):
+            item = self.scan_table.item(row, 8)
+            if item and item.text().split("|", 1)[0].strip().lower() == target:
+                self.scan_table.selectRow(row)
+                self.scan_table.scrollToItem(item)
+                break
+
+    def open_scan_context_menu(self, pos):
+        row = self.scan_table.rowAt(pos.y())
+        if row < 0:
+            return
+        self.scan_table.selectRow(row)
+        net = self._network_from_row(row)
+        if not net:
+            return
+        menu = QMenu(self)
+        set_target_action = menu.addAction("Set as Target")
+        menu.addSeparator()
+        copy_ssid_action = menu.addAction("Copy SSID")
+        copy_bssid_action = menu.addAction("Copy BSSID")
+        copy_row_action = menu.addAction("Copy Row")
+        chosen = menu.exec(self.scan_table.viewport().mapToGlobal(pos))
+        if chosen == set_target_action:
+            self.select_target()
+        elif chosen == copy_ssid_action:
+            QApplication.clipboard().setText(net.ssid or "<hidden>")
+            self.statusBar().showMessage("SSID copied to clipboard")
+        elif chosen == copy_bssid_action:
+            QApplication.clipboard().setText(net.bssid or "")
+            self.statusBar().showMessage("BSSID copied to clipboard")
+        elif chosen == copy_row_action:
+            row_text = f"{net.ssid or '<hidden>'}, {net.signal}%, {net.security}, {self._channel_to_band(int(net.channel or 0))}, ch {int(net.channel or 0)}, {net.bssid or ''}"
+            QApplication.clipboard().setText(row_text)
+            self.statusBar().showMessage("Row copied to clipboard")
+
+    def toggle_auto_rescan(self, enabled: bool):
+        self._scan_auto_enabled = bool(enabled)
+        if enabled:
+            self.update_auto_rescan_interval()
+            self.statusBar().showMessage("Auto-rescan enabled")
+        else:
+            self._scan_auto_timer.stop()
+            self.statusBar().showMessage("Auto-rescan disabled")
+
+    def update_auto_rescan_interval(self):
+        if not self._scan_auto_enabled:
+            return
+        self._scan_auto_timer.start(int(self.auto_rescan_interval.value()) * 1000)
+
+    def _on_auto_rescan_tick(self):
+        if self.scan_btn.isEnabled():
+            self.start_scan()
+
+    def refresh_interfaces(self):
+        current = self.interface_combo.currentText().strip() if hasattr(self, "interface_combo") else ""
+        if not hasattr(self, "interface_combo"):
+            return
+        self.interface_combo.clear()
+        self.interface_combo.addItem("Auto (default)", "")
+        ifaces = WiFiScanner.list_interfaces()
+        for iface in ifaces:
+            self.interface_combo.addItem(iface, iface)
+        if ifaces:
+            self.iface_health_label.setText("Interface: ready")
+        else:
+            self.iface_health_label.setText("Interface: no adapter detected")
+        if current:
+            idx = self.interface_combo.findText(current)
+            if idx >= 0:
+                self.interface_combo.setCurrentIndex(idx)
+
     def start_scan(self):
         try:    is_admin = ctypes.windll.shell32.IsUserAnAdmin()
         except: is_admin = False
@@ -502,39 +1265,154 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Administrator Required",
                 "GHOSTLINK must be run as Administrator to scan Wi-Fi networks.\n\n"
                 "Please restart the application as Administrator.\n(Right-click -> Run as administrator)")
+            self.iface_health_label.setText("Interface: admin required")
             return
         self.statusBar().showMessage("Scanning for Wi-Fi networks...")
+        self.last_scan_label.setText("Last scan: scanning...")
         self.scan_btn.setEnabled(False); self.scan_table.setRowCount(0); self._set_scan_placeholder("Scanning...")
-        self.worker = ScanWorker(None); self.worker.finished.connect(self.on_scan_finished); self.worker.error.connect(self.on_scan_error); self.worker.start()
+        selected_iface = self.interface_combo.currentData() if hasattr(self, "interface_combo") else None
+        selected_iface = selected_iface or None
+        self.worker = ScanWorker(selected_iface); self.worker.finished.connect(self.on_scan_finished); self.worker.error.connect(self.on_scan_error); self.worker.start()
 
     def on_scan_finished(self, networks):
-        self.scan_results = networks; self.scan_table.setRowCount(0)
-        if networks:
-            self.scan_table.setRowCount(len(networks))
-            for row, net in enumerate(networks):
-                ssid_item = QTableWidgetItem(net.ssid or "<hidden>")
-                ssid_item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
-                self.scan_table.setItem(row, 0, ssid_item)
-                self.scan_table.setCellWidget(row, 1, self._signal_cell_widget(net.signal))
-                self.scan_table.setItem(row, 2, self._security_item(net.security))
-            self.statusBar().showMessage(f"Scan complete: {len(networks)} network(s) found")
+        self._scan_cycle += 1
+        previous_bssids = set(self._scan_seen_at.keys())
+        self._scan_prev_by_bssid = {
+            (n.bssid or "").strip().lower(): {"signal": int(n.signal or 0), "security": n.security or ""}
+            for n in self.scan_results
+            if (n.bssid or "").strip()
+        }
+        current_bssids = set([(n.bssid or "").strip().lower() for n in networks if (n.bssid or "").strip()])
+        self._scan_new_bssids = current_bssids.difference(previous_bssids)
+        disappeared = previous_bssids.difference(current_bssids)
+        changed = 0
+        for n in networks:
+            b = (n.bssid or "").strip().lower()
+            if not b or b not in self._scan_prev_by_bssid:
+                continue
+            if abs(int(n.signal or 0) - int(self._scan_prev_by_bssid[b].get("signal", int(n.signal or 0)))) >= 3:
+                changed += 1
+        self.scan_footer_stats.setText(f"Delta: +{len(self._scan_new_bssids)} / -{len(disappeared)} / ~{changed}")
+        now = datetime.now()
+        for bssid in current_bssids:
+            self._scan_seen_at[bssid] = now
+        self.scan_results = sorted(networks, key=lambda n: int(n.signal or 0), reverse=True)
+        self._update_scan_summary(self.scan_results)
+        if self.scan_results:
+            self.apply_scan_filters()
+            self._restore_scan_selection()
+            self.statusBar().showMessage(f"Scan complete: {len(self.scan_results)} network(s) found")
+            self.iface_health_label.setText("Interface: ready")
         else:
-            self._set_scan_placeholder("No networks found."); self.statusBar().showMessage("Scan complete: no networks found")
-        self.scan_btn.setEnabled(True); self.select_btn.setEnabled(bool(networks))
+            self.filtered_scan_results = []
+            self._set_scan_placeholder("No networks found. Hints: turn Wi-Fi on, choose correct adapter, then click RESCAN.")
+            self.statusBar().showMessage("Scan complete: no networks found")
+            self.iface_health_label.setText("Interface: no networks")
+        self.last_scan_label.setText(f"Last scan: {datetime.now().strftime('%H:%M:%S')}")
+        self.scan_btn.setEnabled(True)
 
     def on_scan_error(self, message):
         self.scan_btn.setEnabled(True); self.scan_table.setRowCount(0)
-        self._set_scan_placeholder("Scan failed - see error message."); self.statusBar().showMessage("Scan failed")
+        self._set_scan_placeholder("Scan failed. Hints: Run as Admin, ensure adapter is enabled, then retry scan.")
+        self.statusBar().showMessage("Scan failed")
+        self.last_scan_label.setText("Last scan: failed")
+        self.iface_health_label.setText("Interface: scan error")
         QMessageBox.critical(self, "Scan Error", message)
 
     def select_target(self):
         row = self.scan_table.currentRow()
-        if 0 <= row < len(self.scan_results):
-            net = self.scan_results[row]
-            self.config["ssid"] = net.ssid; self.config["interface"] = net.interface
-            self.attack_target_label.setText(f"SSID: {net.ssid}")
-            self.target_state_right.setText(f"{net.ssid} - {net.security}")
-            self.statusBar().showMessage(f"Target selected: {net.ssid}")
+        net = self._network_from_row(row)
+        if net is not None:
+            ssid = net.ssid or "<hidden>"
+            self.config["ssid"] = ssid; self.config["interface"] = net.interface
+            self.config["target_bssid"] = net.bssid or ""
+            self.attack_target_label.setText(f"SSID: {ssid}")
+            self.target_state_right.setText(f"{ssid} - {net.security}")
+            self.statusBar().showMessage(f"Target selected: {ssid}")
+
+    def export_scan_csv(self):
+        if not self.filtered_scan_results:
+            QMessageBox.information(self, "Export Scan", "No scan results to export.")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Scan Results",
+            "ghostlink_scan_results.csv",
+            "CSV files (*.csv);;All files (*.*)",
+        )
+        if not path:
+            return
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["SSID", "Status", "Signal", "Security", "Risk", "Band", "Channel", "Congestion", "BSSID", "Vendor", "Interface"])
+            congestion = self._congestion_map(self.filtered_scan_results)
+            for net in self.filtered_scan_results:
+                writer.writerow([
+                    net.ssid or "<hidden>",
+                    self._status_label(net),
+                    int(net.signal or 0),
+                    net.security or "Unknown",
+                    self._risk_label(int(net.signal or 0), net.security or ""),
+                    self._channel_to_band(int(net.channel or 0)),
+                    int(net.channel or 0),
+                    congestion.get(int(net.channel or 0), "-"),
+                    net.bssid or "",
+                    self._vendor_from_bssid(net.bssid or ""),
+                    net.interface or "",
+                ])
+        self.statusBar().showMessage(f"Scan CSV exported: {path}")
+
+    def export_scan_json(self):
+        if not self.filtered_scan_results:
+            QMessageBox.information(self, "Export Scan", "No scan results to export.")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Scan Results (JSON)",
+            "ghostlink_scan_results.json",
+            "JSON files (*.json);;All files (*.*)",
+        )
+        if not path:
+            return
+        data = []
+        for net in self.filtered_scan_results:
+            data.append({
+                "ssid": net.ssid or "<hidden>",
+                "bssid": net.bssid or "",
+                "signal": int(net.signal or 0),
+                "security": net.security or "Unknown",
+                "risk": self._risk_label(int(net.signal or 0), net.security or ""),
+                "band": self._channel_to_band(int(net.channel or 0)),
+                "channel": int(net.channel or 0),
+                "congestion": self._congestion_map(self.filtered_scan_results).get(int(net.channel or 0), "-"),
+                "vendor": self._vendor_from_bssid(net.bssid or ""),
+                "status": self._status_label(net),
+                "interface": net.interface or "",
+            })
+        Path(path).write_text(__import__("json").dumps(data, indent=2), encoding="utf-8")
+        self.statusBar().showMessage(f"Scan JSON exported: {path}")
+
+    def copy_scan_results(self):
+        if not self.filtered_scan_results:
+            QMessageBox.information(self, "Copy Scan", "No scan results to copy.")
+            return
+        lines = ["SSID\tStatus\tSignal\tSecurity\tRisk\tBand\tChannel\tCongestion\tBSSID\tVendor"]
+        congestion = self._congestion_map(self.filtered_scan_results)
+        for net in self.filtered_scan_results:
+            lines.append("\t".join([
+                net.ssid or "<hidden>",
+                self._status_label(net),
+                f"{int(net.signal or 0)}%",
+                net.security or "Unknown",
+                self._risk_label(int(net.signal or 0), net.security or ""),
+                self._channel_to_band(int(net.channel or 0)),
+                str(int(net.channel or 0)),
+                congestion.get(int(net.channel or 0), "-"),
+                net.bssid or "",
+                self._vendor_from_bssid(net.bssid or ""),
+            ]))
+        QApplication.clipboard().setText("\n".join(lines))
+        self.statusBar().showMessage("Scan table copied to clipboard")
 
     def debug_scanner(self):
         try:    is_admin = ctypes.windll.shell32.IsUserAnAdmin()
@@ -552,9 +1430,9 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Scanner Error", f"{e}\n\n{traceback.format_exc()}")
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    # Tab 2 â€” Attack Config
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    # Tab 2 Ã¢â‚¬â€ Attack Config
+    # Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     def create_attack_tab(self):
         tab = QWidget(); self.tabs.addTab(tab, "ATTACK CONFIG")
@@ -570,6 +1448,7 @@ class MainWindow(QMainWindow):
         pf.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter); pf.setFormAlignment(Qt.AlignLeft | Qt.AlignTop); pf.setSpacing(10)
         self.profile_combo = QComboBox()
         for pid, prof in PROFILES.items(): self.profile_combo.addItem(f"{prof.icon} {prof.name}", pid)
+        self.profile_combo.setMaxVisibleItems(9)
         self.profile_combo.currentIndexChanged.connect(self.on_profile_changed); pf.addRow("Profile:", self.profile_combo)
         self.charset_edit = QLineEdit(self.config["charset"]); self.charset_edit.setPlaceholderText("Characters to brute force"); pf.addRow("Charset:", self.charset_edit)
         self.minlen_spin = QSpinBox(); self.minlen_spin.setRange(1, 12); self.minlen_spin.setValue(self.config["minlen"]); pf.addRow("Min Length:", self.minlen_spin)
@@ -581,11 +1460,20 @@ class MainWindow(QMainWindow):
         self.timeout_spin = QSpinBox(); self.timeout_spin.setRange(3, 30); self.timeout_spin.setValue(self.config["timeout"]); ef.addRow("Timeout (s):", self.timeout_spin)
 
         wg = QGroupBox("Wordlist Source"); wl = QVBoxLayout(wg); wl.setSpacing(10)
-        self.wordlist_edit = QLineEdit(); self.wordlist_edit.setPlaceholderText("No wordlist selected"); self.wordlist_edit.setReadOnly(True); wl.addWidget(self.wordlist_edit)
+        self.wordlist_edit = QTextEdit()
+        self.wordlist_edit.setPlaceholderText("Paste/type passwords here (one per line), or paste a full wordlist file path.")
+        self.wordlist_edit.setFixedHeight(88)
+        self.wordlist_edit.textChanged.connect(self.update_wordlist_mode_hint)
+        wl.addWidget(self.wordlist_edit)
+        self.wordlist_mode_hint = QLabel("Mode: none")
+        self.wordlist_mode_hint.setProperty("role", "meta")
+        wl.addWidget(self.wordlist_mode_hint)
         wb = QHBoxLayout(); wb.setSpacing(8)
         self.browse_btn   = QPushButton("BROWSE"); self.browse_btn.setProperty("variant", "secondary");   self.browse_btn.clicked.connect(self.browse_wordlist);               wb.addWidget(self.browse_btn)
-        self.clear_wl_btn = QPushButton("CLEAR");  self.clear_wl_btn.setProperty("variant", "secondary"); self.clear_wl_btn.clicked.connect(lambda: self.wordlist_edit.setText("")); wb.addWidget(self.clear_wl_btn)
+        self.template_btn = QPushButton("TEMPLATE"); self.template_btn.setProperty("variant", "secondary"); self.template_btn.clicked.connect(self.download_wordlist_template); wb.addWidget(self.template_btn)
+        self.clear_wl_btn = QPushButton("CLEAR");  self.clear_wl_btn.setProperty("variant", "secondary"); self.clear_wl_btn.clicked.connect(lambda: self.wordlist_edit.clear()); wb.addWidget(self.clear_wl_btn)
         wb.addStretch(); wl.addLayout(wb)
+        self.update_wordlist_mode_hint()
 
         xg = QGroupBox("Execution"); xl = QVBoxLayout(xg); xl.setSpacing(10)
         self.cache_check = QCheckBox("Include previously cached passwords"); self.cache_check.setChecked(not self.config["skip_cached"]); xl.addWidget(self.cache_check)
@@ -601,8 +1489,45 @@ class MainWindow(QMainWindow):
         if pid and pid in PROFILES: self.charset_edit.setText(PROFILES[pid].charset)
 
     def browse_wordlist(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Select Wordlist")
-        if path: self.wordlist_edit.setText(path)
+        path, _ = QFileDialog.getOpenFileName(self, "Select Wordlist", "", "Text files (*.txt *.lst *.dic);;All files (*.*)")
+        if path:
+            self.wordlist_edit.setPlainText(path)
+
+    def download_wordlist_template(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Wordlist Template",
+            "ghostlink_wordlist_template.txt",
+            "Text files (*.txt);;All files (*.*)",
+        )
+        if not path:
+            return
+        sample_words = [
+            "# GHOSTLINK Wordlist Template",
+            "# One candidate password per line.",
+            "# Remove comment lines before running if you want.",
+            "password123",
+            "welcome123",
+            "letmein2026",
+            "qwerty123",
+            "admin@123",
+            "wifi@home",
+            "company2026",
+            "summer2026!",
+        ]
+        Path(path).write_text("\n".join(sample_words) + "\n", encoding="utf-8")
+        self.statusBar().showMessage(f"Template saved: {path}")
+
+    def update_wordlist_mode_hint(self):
+        wl_raw = self.wordlist_edit.toPlainText().strip()
+        if not wl_raw:
+            self.wordlist_mode_hint.setText("Mode: none (optional)")
+            return
+        if "\n" not in wl_raw and Path(wl_raw).exists():
+            self.wordlist_mode_hint.setText("Mode: file path detected")
+            return
+        inline_count = len([w for w in re.split(r"[\r\n,]+", wl_raw) if w.strip() and not w.strip().startswith("#")])
+        self.wordlist_mode_hint.setText(f"Mode: inline list detected ({inline_count} candidates)")
 
     def update_config_from_gui(self):
         self.config["charset"]     = self.charset_edit.text()
@@ -610,8 +1535,15 @@ class MainWindow(QMainWindow):
         self.config["maxlen"]      = self.maxlen_spin.value()
         self.config["threads"]     = self.threads_spin.value()
         self.config["timeout"]     = self.timeout_spin.value()
-        wl = self.wordlist_edit.text().strip()
-        self.config["wordlist"]    = wl if wl else None
+        wl_raw = self.wordlist_edit.toPlainText().strip()
+        self.config["wordlist"] = None
+        self.config["wordlist_inline"] = None
+        if wl_raw:
+            if "\n" not in wl_raw and Path(wl_raw).exists():
+                self.config["wordlist"] = Path(wl_raw)
+            else:
+                inline_words = [w.strip() for w in re.split(r"[\r\n,]+", wl_raw) if w.strip() and not w.strip().startswith("#")]
+                self.config["wordlist_inline"] = inline_words if inline_words else None
         self.config["skip_cached"] = not self.cache_check.isChecked()
 
     def start_attack(self):
@@ -630,9 +1562,9 @@ class MainWindow(QMainWindow):
         self.start_attack_btn.setEnabled(False); self.stop_btn.setEnabled(True)
         self.statusBar().showMessage(f"Attack running against {self.config['ssid']}")
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    # Tab 3 â€” Progress
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    # Tab 3 Ã¢â‚¬â€ Progress
+    # Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     def create_progress_tab(self):
         tab = QWidget(); self.tabs.addTab(tab, "PROGRESS")
@@ -685,8 +1617,7 @@ class MainWindow(QMainWindow):
         else:
             self.progress_percent_label.setText(f"Progress: {self.progress_bar.value()}%")
         if password and verified:
-            QMessageBox.information(self, "Target Compromised",
-                f"Password Found!\n\nSSID: {self.config['ssid']}\nPassword: {password}\nAttempts: {attempts}\nTime: {elapsed:.1f}s")
+            self.show_compromised_dialog(password, attempts, elapsed)
             self.statusBar().showMessage("Attack complete: password verified")
         elif was_stopped:
             QMessageBox.information(self, "Attack Stopped", "Attack was stopped by user.")
@@ -695,20 +1626,164 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Attack Complete", "Password not found within search space.")
             self.statusBar().showMessage("Attack complete: password not found")
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    # Tab 4 â€” Recon  (REDESIGNED)
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    def show_compromised_dialog(self, password: str, attempts: int, elapsed: float) -> None:
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Target Compromised")
+        dlg.setModal(True)
+        dlg.setMinimumWidth(430)
+        dlg.setStyleSheet("""
+            QDialog {
+                background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #0a192d, stop:1 #060f1f);
+                border: 1px solid #1d5c8f;
+                border-radius: 14px;
+            }
+            QFrame[role="top_band"] {
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #00b8ff, stop:1 #09de9a);
+                border-top-left-radius: 14px;
+                border-top-right-radius: 14px;
+                min-height: 6px;
+                max-height: 6px;
+            }
+            QLabel[role="tag"] {
+                color: #8ecfff;
+                font-size: 9pt;
+                font-weight: 700;
+                letter-spacing: 1px;
+            }
+            QLabel[role="headline"] {
+                color: #f4fbff;
+                font-size: 19px;
+                font-weight: 900;
+            }
+            QLabel[role="badge"] {
+                background: qradialgradient(cx:0.5, cy:0.45, radius:0.9, fx:0.48, fy:0.4, stop:0 #5ad3ff, stop:1 #0075d3);
+                border: 1px solid #3ad0ff;
+                border-radius: 28px;
+                color: #ffffff;
+                font-size: 28px;
+                font-weight: 700;
+                min-width: 56px;
+                max-width: 56px;
+                min-height: 56px;
+                max-height: 56px;
+                qproperty-alignment: AlignCenter;
+            }
+            QFrame[role="card"] {
+                background: #07152b;
+                border: 1px solid #1f507d;
+                border-radius: 10px;
+            }
+            QLabel[role="key"] {
+                color: #57b7ff;
+                font-size: 9pt;
+                font-weight: 700;
+            }
+            QLabel[role="value"] {
+                color: #f2f9ff;
+                font-size: 10.5pt;
+                font-weight: 700;
+            }
+            QPushButton {
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #008dd8, stop:1 #00c9ff);
+                color: #01182b;
+                border: none;
+                border-radius: 10px;
+                min-height: 38px;
+                padding: 0 20px;
+                font-size: 10pt;
+                font-weight: 900;
+                letter-spacing: 1px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #00a0f2, stop:1 #26dcff);
+            }
+            QPushButton:pressed {
+                background: #0083c8;
+            }
+        """)
+
+        root = QVBoxLayout(dlg)
+        root.setContentsMargins(0, 0, 0, 14)
+        root.setSpacing(0)
+
+        top_band = QFrame()
+        top_band.setProperty("role", "top_band")
+        root.addWidget(top_band)
+
+        body = QWidget()
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(18, 14, 18, 0)
+        body_layout.setSpacing(12)
+        root.addWidget(body)
+
+        tag = QLabel("VERIFIED ACCESS")
+        tag.setProperty("role", "tag")
+        body_layout.addWidget(tag)
+
+        heading_row = QHBoxLayout()
+        heading_row.setContentsMargins(0, 0, 0, 0)
+        heading_row.setSpacing(12)
+        badge = QLabel("i")
+        badge.setProperty("role", "badge")
+        heading_row.addWidget(badge, 0, Qt.AlignTop)
+
+        title_col = QVBoxLayout()
+        title_col.setContentsMargins(0, 2, 0, 0)
+        title_col.setSpacing(3)
+        headline = QLabel("Password Found")
+        headline.setProperty("role", "headline")
+        subtitle = QLabel("Target compromised successfully.")
+        subtitle.setStyleSheet("color:#8ab0cf; font-size:10pt;")
+        title_col.addWidget(headline)
+        title_col.addWidget(subtitle)
+        heading_row.addLayout(title_col, 1)
+        body_layout.addLayout(heading_row)
+
+        card = QFrame()
+        card.setProperty("role", "card")
+        card_layout = QGridLayout(card)
+        card_layout.setContentsMargins(12, 12, 12, 12)
+        card_layout.setHorizontalSpacing(14)
+        card_layout.setVerticalSpacing(8)
+        details = [
+            ("SSID", str(self.config.get("ssid") or "-")),
+            ("Password", str(password)),
+            ("Attempts", f"{attempts:,}"),
+            ("Time", f"{elapsed:.1f}s"),
+        ]
+        for row, (key, value) in enumerate(details):
+            key_lbl = QLabel(key.upper())
+            key_lbl.setProperty("role", "key")
+            val_lbl = QLabel(value)
+            val_lbl.setProperty("role", "value")
+            val_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            card_layout.addWidget(key_lbl, row, 0)
+            card_layout.addWidget(val_lbl, row, 1)
+        body_layout.addWidget(card)
+
+        button_row = QHBoxLayout()
+        button_row.addStretch()
+        ok_btn = QPushButton("CONTINUE")
+        ok_btn.clicked.connect(dlg.accept)
+        button_row.addWidget(ok_btn)
+        body_layout.addLayout(button_row)
+
+        dlg.exec()
+
+    # Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    # Tab 4 Ã¢â‚¬â€ Recon  (REDESIGNED)
+    # Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     #
     # Layout: horizontal QSplitter
-    #   LEFT  â€” narrow sidebar  (190 px, not resizable by user)
-    #             â€¢ title + subtitle
-    #             â€¢ 9 module buttons (vertical stack, compact)
-    #             â€¢ RUN ALL button
-    #             â€¢ spacer
-    #             â€¢ running-indicator strip (vertical, compact)
-    #   RIGHT â€” main output area  (stretches to fill remaining width)
-    #             â€¢ toolbar row  (filter pills + action buttons + checkboxes)
-    #             â€¢ recon_output QTextEdit  â† given stretch=1, fills everything
+    #   LEFT  Ã¢â‚¬â€ narrow sidebar  (190 px, not resizable by user)
+    #             Ã¢â‚¬Â¢ title + subtitle
+    #             Ã¢â‚¬Â¢ 9 module buttons (vertical stack, compact)
+    #             Ã¢â‚¬Â¢ RUN ALL button
+    #             Ã¢â‚¬Â¢ spacer
+    #             Ã¢â‚¬Â¢ running-indicator strip (vertical, compact)
+    #   RIGHT Ã¢â‚¬â€ main output area  (stretches to fill remaining width)
+    #             Ã¢â‚¬Â¢ toolbar row  (filter pills + action buttons + checkboxes)
+    #             Ã¢â‚¬Â¢ recon_output QTextEdit  Ã¢â€ Â given stretch=1, fills everything
     #
     # This removes the "Structured Recon Data" table that was eating vertical
     # space and leaving only ~2 lines for the actual output.  The rich HTML
@@ -719,20 +1794,20 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         self.tabs.addTab(tab, "RECON")
 
-        # Root layout â€” no padding; the splitter fills the whole pane
+        # Root layout Ã¢â‚¬â€ no padding; the splitter fills the whole pane
         root = QHBoxLayout(tab)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # â”€â”€ Horizontal splitter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # Ã¢â€â‚¬Ã¢â€â‚¬ Horizontal splitter Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
         splitter = QSplitter(Qt.Horizontal)
         splitter.setHandleWidth(1)
         splitter.setChildrenCollapsible(False)
         root.addWidget(splitter)
 
-        # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        # Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
         # LEFT SIDEBAR
-        # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        # Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
         sidebar_outer = QWidget()
         sidebar_outer.setProperty("role", "recon_sidebar")
         sidebar_outer.setFixedWidth(200)
@@ -759,17 +1834,17 @@ class MainWindow(QMainWindow):
         sidebar_layout.addWidget(mod_section)
         sidebar_layout.addSpacing(6)
 
-        # Module buttons â€” vertical stack, compact
+        # Module buttons Ã¢â‚¬â€ vertical stack, compact
         modules = [
-            ("â‘  Full Recon",          "full"),
-            ("â‘¡ My Device",           "my_device"),
-            ("â‘¢ Infrastructure",      "infrastructure"),
-            ("â‘£ Wireless Analysis",   "wireless"),
-            ("â‘¤ Internet Identity",   "internet"),
-            ("â‘¥ Performance",         "performance"),
-            ("â‘¦ Resources & Sharing", "resources"),
-            ("â‘§ Security Insights",   "security"),
-            ("â‘¨ Traffic Analysis",    "traffic"),
+            ("1 Full Recon",          "full"),
+            ("2 My Device",           "my_device"),
+            ("3 Infrastructure",      "infrastructure"),
+            ("4 Wireless Analysis",   "wireless"),
+            ("5 Internet Identity",   "internet"),
+            ("6 Performance",         "performance"),
+            ("7 Resources & Sharing", "resources"),
+            ("8 Security Insights",   "security"),
+            ("9 Traffic Analysis",    "traffic"),
         ]
         self._mod_buttons = {}
         for label, mid in modules:
@@ -784,7 +1859,7 @@ class MainWindow(QMainWindow):
         sidebar_layout.addSpacing(8)
 
         # Run All
-        run_all_btn = QPushButton("â¬¡  RUN ALL MODULES")
+        run_all_btn = QPushButton(">  RUN ALL MODULES")
         run_all_btn.setProperty("role", "run_all_btn")
         run_all_btn.setFixedHeight(34)
         run_all_btn.clicked.connect(lambda: self._run_recon_module("all"))
@@ -792,7 +1867,7 @@ class MainWindow(QMainWindow):
 
         sidebar_layout.addStretch()
 
-        # â”€â”€ Running indicator (inside sidebar, bottom) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # Ã¢â€â‚¬Ã¢â€â‚¬ Running indicator (inside sidebar, bottom) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
         self.recon_status_strip = QFrame()
         self.recon_status_strip.setProperty("role", "recon_running")
         self.recon_status_strip.setVisible(False)
@@ -804,14 +1879,14 @@ class MainWindow(QMainWindow):
 
         ss_top = QHBoxLayout()
         ss_top.setSpacing(6)
-        self.recon_spinner_label = QLabel("â—")
+        self.recon_spinner_label = QLabel("Ã¢â€”Â")
         self.recon_spinner_label.setStyleSheet(
             "color:#00b8ff; font-size:12pt; font-weight:900;"
         )
-        self._spinner_frames = ["â—", "â—“", "â—‘", "â—’"]
+        self._spinner_frames = ["Ã¢â€”Â", "Ã¢â€”â€œ", "Ã¢â€”â€˜", "Ã¢â€”â€™"]
         self._spinner_idx = 0
 
-        self.recon_running_label = QLabel("Runningâ€¦")
+        self.recon_running_label = QLabel("RunningÃ¢â‚¬Â¦")
         self.recon_running_label.setStyleSheet(
             "color:#a0d4ff; font-size:8pt; font-weight:700; letter-spacing:0.5px;"
         )
@@ -841,15 +1916,15 @@ class MainWindow(QMainWindow):
 
         splitter.addWidget(sidebar_outer)
 
-        # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        # Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
         # RIGHT OUTPUT PANEL
-        # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        # Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(8, 14, 14, 14)
         right_layout.setSpacing(8)
 
-        # â”€â”€ Toolbar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # Ã¢â€â‚¬Ã¢â€â‚¬ Toolbar Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
         toolbar_frame = QFrame()
         toolbar_frame.setStyleSheet(
             "QFrame { background:#04111f; border:1px solid #0f2d47; border-radius:7px; }"
@@ -927,7 +2002,7 @@ class MainWindow(QMainWindow):
 
         right_layout.addWidget(toolbar_frame)
 
-        # â”€â”€ Summary strip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # Ã¢â€â‚¬Ã¢â€â‚¬ Summary strip Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
         summary_frame = QFrame()
         summary_frame.setProperty("role", "recon_summary")
         summary_layout = QHBoxLayout(summary_frame)
@@ -948,7 +2023,7 @@ class MainWindow(QMainWindow):
         summary_layout.addStretch()
         right_layout.addWidget(summary_frame)
 
-        # â”€â”€ Recon output â€” THE HERO WIDGET â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # Ã¢â€â‚¬Ã¢â€â‚¬ Recon output Ã¢â‚¬â€ THE HERO WIDGET Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
         # Wrap in a styled frame so it has the dark border
         output_frame = QFrame()
         output_frame.setProperty("role", "recon_output_frame")
@@ -974,7 +2049,7 @@ class MainWindow(QMainWindow):
         """)
         output_frame_layout.addWidget(self.recon_output)
 
-        # stretch=1 â†’ this consumes ALL remaining vertical space
+        # stretch=1 Ã¢â€ â€™ this consumes ALL remaining vertical space
         right_layout.addWidget(output_frame, 1)
 
         splitter.addWidget(right_widget)
@@ -984,7 +2059,7 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(1, 1)
         self._update_recon_summary()
 
-    # â”€â”€ Filter pill helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Ã¢â€â‚¬Ã¢â€â‚¬ Filter pill helper Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     def _make_filter_pill(self, text: str, active: bool = False) -> QLabel:
         pill = QLabel(text)
@@ -999,7 +2074,7 @@ class MainWindow(QMainWindow):
             pill.setStyleSheet(base + "background:#061426; border:1px solid #1e4d79; color:#4b95d5;")
         return pill
 
-    # â”€â”€ Toolbar action slots â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Ã¢â€â‚¬Ã¢â€â‚¬ Toolbar action slots Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     def _recon_copy_log(self):
         QApplication.clipboard().setText(self.recon_output.toPlainText())
@@ -1022,7 +2097,7 @@ class MainWindow(QMainWindow):
                     row.get("value", ""),
                     row.get("content", ""),
                 ])
-        self.statusBar().showMessage(f"CSV exported â†’ {path}")
+        self.statusBar().showMessage(f"CSV exported Ã¢â€ â€™ {path}")
 
     def _recon_export_json(self):
         path, _ = QFileDialog.getSaveFileName(self, "Export JSON", "recon_data.json", "JSON Files (*.json)")
@@ -1032,7 +2107,7 @@ class MainWindow(QMainWindow):
         rows = self._recon_records or [{"tag": "LOG", "kind": "line", "content": ln.strip()} for ln in self.recon_output.toPlainText().splitlines() if ln.strip()]
         with open(path, "w", encoding="utf-8") as f:
             json.dump(rows, f, indent=2)
-        self.statusBar().showMessage(f"JSON exported â†’ {path}")
+        self.statusBar().showMessage(f"JSON exported Ã¢â€ â€™ {path}")
 
     def _recon_clear(self):
         self.recon_output.clear()
@@ -1094,7 +2169,7 @@ class MainWindow(QMainWindow):
         self._summary_alerts.setText(f"Alerts {alerts}")
         self._summary_view.setText(f"View {view}")
 
-    # â”€â”€ Spinner helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Ã¢â€â‚¬Ã¢â€â‚¬ Spinner helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     def _tick_spinner(self):
         self._spinner_idx = (self._spinner_idx + 1) % len(self._spinner_frames)
@@ -1102,7 +2177,7 @@ class MainWindow(QMainWindow):
 
     def _set_recon_running(self, module_name: str):
         label = module_name.upper().replace("_", " ")
-        self.recon_running_label.setText(f"{label}â€¦")
+        self.recon_running_label.setText(f"{label}Ã¢â‚¬Â¦")
         self.recon_status_strip.setVisible(True)
         self._spinner_timer.start()
         # Visually highlight the active button
@@ -1122,7 +2197,7 @@ class MainWindow(QMainWindow):
         for btn in self._mod_buttons.values():
             btn.setStyleSheet("")
 
-    # â”€â”€ Module dispatch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Ã¢â€â‚¬Ã¢â€â‚¬ Module dispatch Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     def _run_recon_module(self, module_id: str):
         self.recon_output.clear()
@@ -1192,9 +2267,9 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Recon failed")
         QMessageBox.critical(self, "Recon Error", message)
 
-    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-    # Recon rendering â€” fully finetuned v3
-    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    # Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+    # Recon rendering Ã¢â‚¬â€ fully finetuned v3
+    # Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 
     # Per-tag config: (card-bg, left-accent, badge-text, badge-bg)
     _TAG_CFG: dict[str, tuple[str, str, str, str]] = {
@@ -1233,14 +2308,14 @@ class MainWindow(QMainWindow):
         text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
         text = re.sub(r"\uFFFD?\[[0-9;]*m", "", text)
         replacements = {
-            "Ã¢Å“â€œ": "âœ“",
-            "Ã¢Å“â€”": "âœ—",
-            "Ã¢â€ â€™": "â†’",
-            "Ã¢â‚¬Â¢": "â€¢",
-            "Ã¢Å¡Â ": "âš ",
-            "Ã¢â€¢Â": "â•",
-            "Ã¢â€â‚¬": "â”€",
-            "Ã¢â‚¬â€": "â€”",
+            "ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“": "Ã¢Å“â€œ",
+            "ÃƒÂ¢Ã…â€œÃ¢â‚¬â€": "Ã¢Å“â€”",
+            "ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢": "Ã¢â€ â€™",
+            "ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢": "Ã¢â‚¬Â¢",
+            "ÃƒÂ¢Ã…Â¡Ã‚Â ": "Ã¢Å¡Â ",
+            "ÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â": "Ã¢â€¢Â",
+            "ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬": "Ã¢â€â‚¬",
+            "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â": "Ã¢â‚¬â€",
         }
         for wrong, correct in replacements.items():
             text = text.replace(wrong, correct)
@@ -1268,29 +2343,29 @@ class MainWindow(QMainWindow):
         compact = line.strip()
         if len(compact) < 8:
             return False
-        return bool(re.fullmatch(r"[#=\[\]\(\)\|/\\+\-_.:;%\sâ–ˆâ–“â–’â–‘â–â–‚â–ƒâ–„â–…â–†â–‡]+", compact))
+        return bool(re.fullmatch(r"[#=\[\]\(\)\|/\\+\-_.:;%\sÃ¢â€“Ë†Ã¢â€“â€œÃ¢â€“â€™Ã¢â€“â€˜Ã¢â€“ÂÃ¢â€“â€šÃ¢â€“Æ’Ã¢â€“â€žÃ¢â€“â€¦Ã¢â€“â€ Ã¢â€“â€¡]+", compact))
 
     def _classify_line(self, line: str) -> tuple[str, str]:
         if line.strip().lower() in ("none", "null", "n/a", "-"):
-            return "LOG", "â€”"
+            return "LOG", "Ã¢â‚¬â€"
 
         m = re.match(r"^(LOG|DATA|INFO|WARN|ERROR)\s*(.*)", line, re.IGNORECASE)
         if m:
             tag  = m.group(1).upper()
             body = m.group(2).strip()
             if not body or body.lower() in ("none", "null", "n/a", "-"):
-                return tag, "â€”"
+                return tag, "Ã¢â‚¬â€"
             return tag, body
 
-        status_prefix = re.match(r"^[\[\(]?(âœ“|âœ—|âš |â†’)\]?\s*(.*)$", line)
+        status_prefix = re.match(r"^[\[\(]?(Ã¢Å“â€œ|Ã¢Å“â€”|Ã¢Å¡Â |Ã¢â€ â€™)\]?\s*(.*)$", line)
         if status_prefix and status_prefix.group(2).strip():
             sym = status_prefix.group(1)
             msg = status_prefix.group(2).strip()
-            if sym == "âœ“":
+            if sym == "Ã¢Å“â€œ":
                 return "DATA", msg
-            if sym == "âœ—":
+            if sym == "Ã¢Å“â€”":
                 return "ERROR", msg
-            if sym == "âš ":
+            if sym == "Ã¢Å¡Â ":
                 return "WARN", msg
             return "INFO", msg
 
@@ -1325,7 +2400,7 @@ class MainWindow(QMainWindow):
 
         low = line.lower()
         is_section_pattern = any(re.search(p, line, re.IGNORECASE) for p in [
-            r"^\[\d+\]", r"^={3,}", r"â”€{4,}", r"^#+\s",
+            r"^\[\d+\]", r"^={3,}", r"Ã¢â€â‚¬{4,}", r"^#+\s",
         ])
         is_section_keyword = (
             len(line) <= 64
@@ -1433,7 +2508,7 @@ class MainWindow(QMainWindow):
         label, value = body.split("\t", 1)
         safe_label = html_mod.escape(label.strip())
         raw_value = value.strip()
-        metric_match = re.match(r"^([#=â–ˆâ–“â–’â–‘â–â–‚â–ƒâ–„â–…â–†â–‡|:\-\. ]{1,})\s+(\d+)$", raw_value)
+        metric_match = re.match(r"^([#=Ã¢â€“Ë†Ã¢â€“â€œÃ¢â€“â€™Ã¢â€“â€˜Ã¢â€“ÂÃ¢â€“â€šÃ¢â€“Æ’Ã¢â€“â€žÃ¢â€“â€¦Ã¢â€“â€ Ã¢â€“â€¡|:\-\. ]{1,})\s+(\d+)$", raw_value)
         if metric_match:
             bar_raw = metric_match.group(1)
             metric_val = metric_match.group(2)
@@ -1451,10 +2526,10 @@ class MainWindow(QMainWindow):
                 return f"#{r:02x}{g:02x}{b:02x}"
 
             fill = "".join(
-                f"<span style='color:{_seg_color(i)};'>â–°</span>"
+                f"<span style='color:{_seg_color(i)};'>Ã¢â€“Â°</span>"
                 for i in range(fill_slots)
             )
-            empty = "<span style='color:#224665;'>â–±</span>" * (slots - fill_slots)
+            empty = "<span style='color:#224665;'>Ã¢â€“Â±</span>" * (slots - fill_slots)
             pct = int(round((fill_slots / slots) * 100))
             safe_value = (
                 "<span style='display:inline-block; min-width:300px; padding:2px 8px; "
@@ -1572,7 +2647,7 @@ class MainWindow(QMainWindow):
 
     def _tagged_card_html(self, tag: str, body: str) -> str:
         bg, accent, badge_text, badge_bg = self._TAG_CFG.get(tag, self._TAG_CFG["LOG"])
-        is_placeholder = (body == "â€”")
+        is_placeholder = (body == "Ã¢â‚¬â€")
         safe = html_mod.escape(body)
         if not is_placeholder:
             safe = self._hl_semantic(self._hl_addresses(safe))
@@ -1788,8 +2863,24 @@ class MainWindow(QMainWindow):
             if self._autoscroll_check.isChecked():
                 self.recon_output.moveCursor(QTextCursor.End)
 
-    # â”€â”€ Legacy compat stubs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Ã¢â€â‚¬Ã¢â€â‚¬ Legacy compat stubs Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    def keyPressEvent(self, event):
+        if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_F:
+            if hasattr(self, "scan_search_edit"):
+                self.tabs.setCurrentIndex(0)
+                self.scan_search_edit.setFocus()
+                self.scan_search_edit.selectAll()
+                event.accept()
+                return
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            if self.tabs.currentIndex() == 0 and hasattr(self, "scan_table") and self.scan_table.hasFocus():
+                if self.select_btn.isEnabled():
+                    self.select_target()
+                    event.accept()
+                    return
+        super().keyPressEvent(event)
     def _normalize_recon_stream(self, text: str) -> str:   return text
     def _parse_recon_line(self, line: str):                 return self._classify_line(line)
     def _is_divider_line(self, text: str) -> bool:         return len(text) >= 6 and bool(re.fullmatch(r"[=\-_.\s]{6,}", text.strip()))
     def _is_section_title(self, text: str) -> bool:        tag, _ = self._classify_line(text); return tag == "SECTION"
+
