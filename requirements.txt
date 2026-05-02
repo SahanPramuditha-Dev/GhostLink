@@ -1,0 +1,12 @@
+# ── Core dependency (needed for vault encryption) ──
+cryptography>=36.0
+
+# ── Optional: nicer terminal dashboard ──
+rich>=10.0
+
+# ── Optional: full speed‑test (download + upload) ──
+speedtest-cli>=2.1
+
+pyside6
+
+pyinstaller

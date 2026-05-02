@@ -252,8 +252,8 @@ class MainWindow(QMainWindow):
             border-top-right-radius: 6px; border-bottom-right-radius: 6px;
         }
         QComboBox::down-arrow {
-            width: 0px; height: 0px; border-left: 5px solid transparent;
-            border-right: 5px solid transparent; border-top: 5px solid #a1a1aa;
+            width: 0px; height: 0px; border-left: 4px solid transparent;
+            border-right: 4px solid transparent; border-top: 5px solid #a1a1aa;
         }
         QComboBox::down-arrow:on { border-top: 5px solid #d4d4d8; }
         QComboBox QAbstractItemView {
@@ -264,8 +264,8 @@ class MainWindow(QMainWindow):
         QComboBox QAbstractItemView::item { min-height: 28px; padding: 4px 8px; border-radius: 4px; }
         QComboBox QAbstractItemView::item:hover { background: #27272a; }
         QComboBox QAbstractItemView::item:selected { background: #1e3a8a; }
-        QCheckBox { spacing: 8px; color: #d4d4d8; }
-        QCheckBox::indicator { width: 18px; height: 18px; border-radius: 4px; border: 1px solid #71717a; background: #18181b; }
+        QCheckBox { spacing: 6px; color: #d4d4d8; }
+        QCheckBox::indicator { width: 16px; height: 16px; border-radius: 4px; border: 1px solid #71717a; background: #18181b; }
         QCheckBox::indicator:checked { background: #3b82f6; border: 1px solid #3b82f6; }
         QPushButton {
             background: #3b82f6; border: 1px solid #2563eb; color: #ffffff;
@@ -309,8 +309,8 @@ class MainWindow(QMainWindow):
             qproperty-alignment: 'AlignVCenter | AlignLeft';
         }
         QPushButton[role="mod_btn"] {
-            background: #0e1e35; border: 1px solid #1e3a5e; border-radius: 6px;
-            color: #7ab8e8; font-size: 9pt; font-weight: 600; padding: 6px 10px;
+            background: #0f172a; border: 1px solid #1e293b; border-radius: 6px;
+            color: #94a3b8; font-size: 9pt; font-weight: 600; padding: 6px 12px;
             text-align: left;
         }
         QPushButton[role="mod_btn"]:hover   { background: #1e3a8a; border-color: #3b82f6; color: #bfdbfe; }
@@ -336,8 +336,8 @@ class MainWindow(QMainWindow):
         }
         QPushButton[role="run_all_btn"]:hover { background: #78350f; border-color: #b45309; color: #fde68a; }
         QPushButton[role="toolbar_btn"] {
-            background: #0f172a; border: 1px solid #1e293b; border-radius: 6px;
-            color: #94a3b8; font-size: 8pt; font-weight: 800; letter-spacing: 0.5px;
+            background: #1e293b; border: 1px solid #334155; border-radius: 6px;
+            color: #cbd5e1; font-size: 8pt; font-weight: 800; letter-spacing: 0.5px;
             padding: 6px 12px; min-height: 0;
         }
         QPushButton[role="toolbar_btn"]:hover { background: #1e293b; border-color: #334155; color: #cbd5e1; }
@@ -1206,17 +1206,18 @@ class MainWindow(QMainWindow):
         self.attack_target_label = QLabel("  ○  No target selected — go to SCAN & SELECT first")
         self.attack_target_label.setStyleSheet(
             "QLabel{background:#1e0a0a;border:1px solid #7f1d1d;border-radius:6px;"
-            "color:#f87171;font-weight:600;padding:6px 12px;}"
+            "color:#f87171;font-weight:700;padding:10px 14px; font-size: 10pt;}"
         )
         layout.addWidget(self.attack_target_label)
 
-        grid = QGridLayout(); grid.setHorizontalSpacing(12); grid.setVerticalSpacing(8)
+        grid = QGridLayout(); grid.setHorizontalSpacing(16); grid.setVerticalSpacing(16)
 
         # Search Strategy
         pg = QGroupBox("Search Strategy"); pf = QFormLayout(pg)
+        pf.setContentsMargins(12, 16, 12, 12)
         pf.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
         pf.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
-        pf.setSpacing(10)
+        pf.setSpacing(12)
         self.profile_combo = QComboBox()
         for pid, prof in PROFILES.items():
             self.profile_combo.addItem(f"{prof.icon} {prof.name}", pid)
@@ -1236,36 +1237,20 @@ class MainWindow(QMainWindow):
 
         # Execution Limits
         eg = QGroupBox("Execution Limits"); ef = QFormLayout(eg)
+        ef.setContentsMargins(12, 16, 12, 12)
         ef.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
         ef.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
-        ef.setSpacing(10)
+        ef.setSpacing(12)
         self.threads_spin = QSpinBox(); self.threads_spin.setRange(1, 32); self.threads_spin.setValue(self.config["threads"])
         self.threads_spin.valueChanged.connect(self._update_attack_estimate)
         ef.addRow("Threads:", self.threads_spin)
         self.timeout_spin = QSpinBox(); self.timeout_spin.setRange(3, 60); self.timeout_spin.setValue(self.config["timeout"])
         ef.addRow("Timeout (s):", self.timeout_spin)
 
-        # Attack Estimate box (lives inside Execution Limits group)
-        self.estimate_frame = QFrame()
-        self.estimate_frame.setStyleSheet(
-            "QFrame{background:#0a0a0c;border:1px solid #2a2a2e;border-radius:6px;}"
-        )
-        est_layout = QVBoxLayout(self.estimate_frame)
-        est_layout.setContentsMargins(10, 8, 10, 8)
-        est_layout.setSpacing(4)
-        est_hdr = QLabel("ATTACK ESTIMATE")
-        est_hdr.setStyleSheet("color:#555;font-size:8pt;font-weight:800;letter-spacing:0.08em;")
-        est_layout.addWidget(est_hdr)
-        self.est_candidates_lbl = QLabel("Candidates: —")
-        self.est_candidates_lbl.setStyleSheet("color:#fbbf24;font-size:9pt;font-weight:600;")
-        self.est_time_lbl = QLabel("Est. time: —")
-        self.est_time_lbl.setStyleSheet("color:#60a5fa;font-size:9pt;")
-        est_layout.addWidget(self.est_candidates_lbl)
-        est_layout.addWidget(self.est_time_lbl)
-        ef.addRow("", self.estimate_frame)
-
         # Wordlist Source
-        wg = QGroupBox("Wordlist Source"); wl = QVBoxLayout(wg); wl.setSpacing(10)
+        wg = QGroupBox("Wordlist Source"); wl = QVBoxLayout(wg)
+        wl.setContentsMargins(12, 16, 12, 12)
+        wl.setSpacing(10)
         self.wordlist_edit = QTextEdit()
         self.wordlist_edit.setPlaceholderText("Paste/type passwords here (one per line), or paste a full wordlist file path.")
         self.wordlist_edit.setFixedHeight(88)
@@ -1281,19 +1266,47 @@ class MainWindow(QMainWindow):
         wb.addStretch(); wl.addLayout(wb)
 
         # Execution
-        xg = QGroupBox("Execution"); xl = QVBoxLayout(xg); xl.setSpacing(10)
+        xg = QGroupBox("Execution"); xl = QVBoxLayout(xg)
+        xl.setContentsMargins(12, 16, 12, 12)
+        xl.setSpacing(12)
         self.cache_check = QCheckBox("Include previously cached passwords")
         self.cache_check.setChecked(not self.config["skip_cached"])
         xl.addWidget(self.cache_check)
         pl = QLabel("Start will switch to Progress and begin worker execution.")
         pl.setProperty("role", "meta"); xl.addWidget(pl)
+        xl.addStretch()
         self.start_attack_btn = QPushButton("START ATTACK")
         self.start_attack_btn.setProperty("variant", "critical")
+        self.start_attack_btn.setStyleSheet("font-size: 11pt; font-weight: 800; padding: 12px; letter-spacing: 1px;")
         self.start_attack_btn.clicked.connect(self.start_attack)
         xl.addWidget(self.start_attack_btn)
 
+        # Attack Estimate box (Spans across bottom of grid)
+        self.estimate_frame = QFrame()
+        self.estimate_frame.setStyleSheet(
+            ".QFrame{background:#121214;border:1px solid #27272a;border-radius:8px;}"
+        )
+        est_layout = QHBoxLayout(self.estimate_frame)
+        est_layout.setContentsMargins(16, 14, 16, 14)
+        est_layout.setSpacing(24)
+        
+        est_hdr = QLabel("ATTACK ESTIMATE:")
+        est_hdr.setStyleSheet("color:#a1a1aa;font-size:10pt;font-weight:800;letter-spacing:1px;")
+        est_layout.addWidget(est_hdr)
+        
+        self.est_candidates_lbl = QLabel("Candidates: —")
+        self.est_candidates_lbl.setStyleSheet("color:#fcd34d;font-size:11pt;font-weight:700;")
+        est_layout.addWidget(self.est_candidates_lbl)
+        
+        self.est_time_lbl = QLabel("Est. time: —")
+        self.est_time_lbl.setStyleSheet("color:#93c5fd;font-size:11pt;font-weight:700;")
+        est_layout.addWidget(self.est_time_lbl)
+        
+        est_layout.addStretch()
+
         grid.addWidget(pg, 0, 0); grid.addWidget(wg, 0, 1)
         grid.addWidget(eg, 1, 0); grid.addWidget(xg, 1, 1)
+        grid.addWidget(self.estimate_frame, 2, 0, 1, 2)
         grid.setColumnStretch(0, 1); grid.setColumnStretch(1, 1)
         layout.addLayout(grid)
         layout.addStretch()
@@ -1377,9 +1390,9 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.progress_percent_label.setText("0%")
         self.speed_label.setText("0 pwd/s")
-        self.attempts_label.setText("Attempts: 0")
+        self.attempts_label.setText("0")
         self.current_pwd_label.setText("—")
-        self.eta_label.setText("ETA: —")
+        self.eta_label.setText("—")
         self.attack_worker = AttackWorker(self.config)
         self.attack_worker.attack_started.connect(self.on_attack_started)
         self.attack_worker.progress_update.connect(self.on_progress_update)
@@ -1400,53 +1413,68 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(tab, "PROGRESS")
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(12)
+        layout.setSpacing(16)
         layout.addWidget(self._make_tab_header("Live Telemetry", "Track candidate processing rate, attempts, and active password candidate."))
 
         # ── Stat cards ──────────────────────────────────────────────────
-        sc = QHBoxLayout(); sc.setSpacing(8)
+        sc = QHBoxLayout(); sc.setSpacing(12)
         self.progress_percent_label = QLabel("0%")
         self.speed_label            = QLabel("0 pwd/s")
-        self.attempts_label         = QLabel("Attempts: 0")
-        self.eta_label              = QLabel("ETA: —")
-        for lbl, caption in [
-            (self.progress_percent_label, "Progress"),
-            (self.speed_label,            "Speed"),
-            (self.attempts_label,         "Attempts"),
-            (self.eta_label,              "ETA"),
-        ]:
+        self.attempts_label         = QLabel("0")
+        self.eta_label              = QLabel("—")
+        
+        cards_data = [
+            (self.progress_percent_label, "Progress", "#3b82f6"),  # Blue
+            (self.speed_label,            "Speed",    "#10b981"),  # Emerald
+            (self.attempts_label,         "Attempts", "#f59e0b"),  # Amber
+            (self.eta_label,              "ETA",      "#8b5cf6"),  # Violet
+        ]
+        
+        for lbl, caption, color in cards_data:
             card = QFrame()
-            card.setStyleSheet("QFrame{background:#18181b;border:1px solid #27272a;border-radius:8px;}")
-            cl = QVBoxLayout(card); cl.setContentsMargins(12, 8, 12, 8); cl.setSpacing(2)
-            cap = QLabel(caption)
-            cap.setStyleSheet("color:#71717a;font-size:9pt;")
-            lbl.setStyleSheet("font-size:18px;font-weight:700;color:#f4f4f5;")
+            card.setStyleSheet(f".QFrame{{background:#121214;border:1px solid #27272a;border-bottom:3px solid {color};border-radius:8px;}}")
+            cl = QVBoxLayout(card); cl.setContentsMargins(16, 12, 16, 12); cl.setSpacing(4)
+            cap = QLabel(caption.upper())
+            cap.setStyleSheet("color:#a1a1aa;font-size:8pt;font-weight:800;letter-spacing:1px;")
+            lbl.setStyleSheet(f"font-size:22px;font-weight:900;color:{color};")
             cl.addWidget(cap); cl.addWidget(lbl)
             sc.addWidget(card)
         layout.addLayout(sc)
 
         # ── Current candidate ────────────────────────────────────────────
         cand_frame = QFrame()
-        cand_frame.setStyleSheet("QFrame{background:#0a1f0f;border:1px solid #166534;border-radius:8px;}")
-        cl2 = QHBoxLayout(cand_frame); cl2.setContentsMargins(14, 10, 14, 10)
-        cap2 = QLabel("CURRENT CANDIDATE")
-        cap2.setStyleSheet("color:#4ade80;font-size:8pt;font-weight:800;letter-spacing:0.08em;")
+        cand_frame.setStyleSheet(".QFrame{background:#0a1f0f;border:1px solid #166534;border-radius:8px;}")
+        cl2 = QHBoxLayout(cand_frame); cl2.setContentsMargins(16, 12, 16, 12)
+        cap2 = QLabel("CURRENT CANDIDATE:")
+        cap2.setStyleSheet("color:#4ade80;font-size:9pt;font-weight:800;letter-spacing:1px;")
         self.current_pwd_label = QLabel("—")
-        self.current_pwd_label.setStyleSheet("font-family:'Consolas',monospace;font-size:14px;font-weight:700;color:#f4f4f5;letter-spacing:0.1em;")
+        self.current_pwd_label.setStyleSheet("font-family:'Consolas',monospace;font-size:15px;font-weight:700;color:#f4f4f5;letter-spacing:1px;")
         cl2.addWidget(cap2); cl2.addWidget(self.current_pwd_label, 1); cl2.addStretch()
         layout.addWidget(cand_frame)
 
         # ── Progress bar ─────────────────────────────────────────────────
         pbg = QGroupBox("Progress"); pbl = QVBoxLayout(pbg)
+        pbl.setContentsMargins(12, 16, 12, 12)
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100); self.progress_bar.setValue(0)
         self.progress_bar.setFormat("%p%  ·  %v / %m candidates")
-        self.progress_bar.setMinimumHeight(28)
+        self.progress_bar.setMinimumHeight(32)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                background: #09090b; border: 1px solid #27272a; border-radius: 8px;
+                text-align: center; color: #f4f4f5; font-weight: 800; font-size: 10pt;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1d4ed8, stop:1 #3b82f6);
+                border-radius: 6px;
+            }
+        """)
         pbl.addWidget(self.progress_bar)
         layout.addWidget(pbg)
 
         # ── Execution log ────────────────────────────────────────────────
         lg = QGroupBox("Execution Log"); ll = QVBoxLayout(lg)
+        ll.setContentsMargins(12, 16, 12, 12)
         self.progress_text = QTextEdit()
         self.progress_text.setReadOnly(True)
         self.progress_text.setFont(QFont("Consolas", 10))
@@ -1463,6 +1491,7 @@ class MainWindow(QMainWindow):
         ctrl.addStretch()
         self.stop_btn = QPushButton("■  STOP ATTACK")
         self.stop_btn.setProperty("variant", "danger")
+        self.stop_btn.setStyleSheet("font-size: 11pt; font-weight: 800; padding: 10px 24px; letter-spacing: 1px;")
         self.stop_btn.clicked.connect(self.stop_attack)
         self.stop_btn.setEnabled(False)
         ctrl.addWidget(self.stop_btn)
@@ -1478,7 +1507,7 @@ class MainWindow(QMainWindow):
         )
 
     def on_progress_update(self, current_password: str, attempts: int, speed: float):
-        self.attempts_label.setText(f"Attempts: {attempts:,}")
+        self.attempts_label.setText(f"{attempts:,}")
         self.speed_label.setText(f"{speed:.0f} pwd/s")
         self.current_pwd_label.setText(current_password[:40] if current_password else "—")
 
@@ -1488,7 +1517,7 @@ class MainWindow(QMainWindow):
             self.progress_percent_label.setText(f"{pct}%")
             remaining = max(0, self.total_combinations - attempts)
             eta_s = (remaining / speed) if speed > 0 else 0
-            self.eta_label.setText(f"ETA: {_fmt_duration(eta_s)}" if eta_s > 0 else "ETA: —")
+            self.eta_label.setText(f"{_fmt_duration(eta_s)}" if eta_s > 0 else "—")
 
         # Log every 100 attempts to avoid flooding the QTextEdit
         if attempts % 100 == 0:
@@ -1608,9 +1637,9 @@ class MainWindow(QMainWindow):
         for label, mid in modules:
             btn = QPushButton(f"  {label}")
             btn.setProperty("role", "mod_btn")
-            btn.setFixedHeight(30)
+            btn.setFixedHeight(34)
             btn.clicked.connect(lambda _checked, m=mid: self._run_recon_module(m))
-            sb.addWidget(btn); sb.addSpacing(3)
+            sb.addWidget(btn); sb.addSpacing(6)
             self._mod_buttons[mid] = btn
             self._mod_status[mid] = "idle"
 
@@ -1660,7 +1689,7 @@ class MainWindow(QMainWindow):
 
         # Toolbar
         toolbar_frame = QFrame()
-        toolbar_frame.setStyleSheet("QFrame{background:#04111f;border:1px solid #0f2d47;border-radius:7px;}")
+        toolbar_frame.setStyleSheet(".QFrame{background:#04111f;border:1px solid #0f2d47;border-radius:7px;}")
         tbl = QHBoxLayout(toolbar_frame)
         tbl.setContentsMargins(8, 5, 8, 5); tbl.setSpacing(5)
 
@@ -1675,19 +1704,23 @@ class MainWindow(QMainWindow):
         tbl.addStretch()
 
         for label, slot in [("COPY", self._recon_copy_log), ("CSV", self._recon_export_csv), ("JSON", self._recon_export_json)]:
-            btn = QPushButton(label); btn.setProperty("role", "toolbar_btn"); btn.setFixedHeight(26); btn.clicked.connect(slot); tbl.addWidget(btn)
-        clr = QPushButton("CLEAR"); clr.setProperty("role", "clear_btn"); clr.setFixedHeight(26); clr.clicked.connect(self._recon_clear); tbl.addWidget(clr)
+            btn = QPushButton(label); btn.setProperty("role", "toolbar_btn"); btn.setFixedHeight(28); btn.clicked.connect(slot); tbl.addWidget(btn)
+        clr = QPushButton("CLEAR"); clr.setProperty("role", "clear_btn"); clr.setFixedHeight(28); clr.clicked.connect(self._recon_clear); tbl.addWidget(clr)
 
         sep = QFrame(); sep.setFrameShape(QFrame.VLine); sep.setStyleSheet("color:#1a3d5e;"); tbl.addWidget(sep)
 
-        self._autoscroll_check = QCheckBox("Auto-scroll"); self._autoscroll_check.setChecked(True)
-        self._autoscroll_check.setStyleSheet("font-size:8.5pt;color:#7aaac8;"); tbl.addWidget(self._autoscroll_check)
-
         self._severity_combo = QComboBox()
         self._severity_combo.addItems(["All", "Alerts (Warn + Error)", "Info", "Data", "Warn", "Error"])
-        self._severity_combo.setFixedHeight(24)
+        self._severity_combo.setFixedHeight(28)
+        self._severity_combo.setFixedWidth(140)
         self._severity_combo.currentIndexChanged.connect(self._on_recon_view_changed)
         tbl.addWidget(self._severity_combo)
+
+        tbl.addSpacing(6)
+        
+        self._autoscroll_check = QCheckBox("Auto-scroll"); self._autoscroll_check.setChecked(True)
+        self._autoscroll_check.setStyleSheet("font-size:8.5pt;color:#7aaac8;margin-left:4px;")
+        tbl.addWidget(self._autoscroll_check)
 
         self._collapse_sections_check = QCheckBox("Collapse sections")
         self._collapse_sections_check.setChecked(False)
@@ -1734,12 +1767,12 @@ class MainWindow(QMainWindow):
 
     def _make_filter_pill(self, text: str, active: bool = False) -> QLabel:
         pill = QLabel(text)
-        pill.setFixedHeight(22)
-        base = "border-radius:4px;padding:2px 9px;font-size:7.5pt;font-weight:800;font-family:'Consolas',monospace;letter-spacing:0.5px;"
+        pill.setFixedHeight(24)
+        base = "qproperty-alignment: 'AlignVCenter | AlignHCenter'; border-radius:4px; padding:0 12px; font-size:8pt; font-weight:700; font-family:'Consolas',monospace;"
         if active:
-            pill.setStyleSheet(base + "background:#0d2d4a;border:1px solid #00b8ff;color:#00e5ff;")
+            pill.setStyleSheet(base + "background:#1e3a8a; border:1px solid #3b82f6; color:#bfdbfe;")
         else:
-            pill.setStyleSheet(base + "background:#061426;border:1px solid #1e4d79;color:#4b95d5;")
+            pill.setStyleSheet(base + "background:#0f172a; border:1px solid #1e293b; color:#64748b;")
         return pill
 
     def _recon_copy_log(self):
@@ -1881,7 +1914,6 @@ class MainWindow(QMainWindow):
         mid = getattr(self, "_current_recon_module", "")
         self._set_recon_idle(mid, success=True)
         self.statusBar().showMessage("Recon module complete")
-        self._append_recon_card("DONE", "Module finished successfully.", "#22c55e")
 
     def _on_recon_module_error(self, e: str):
         mid = getattr(self, "_current_recon_module", "")
@@ -1960,8 +1992,10 @@ class MainWindow(QMainWindow):
         m = re.match(r"^(LOG|DATA|INFO|WARN|ERROR|DONE)\s*(.*)", line, re.IGNORECASE)
         if m:
             tag, body = m.group(1).upper(), m.group(2).strip()
+            if len(body) >= 6 and re.fullmatch(r"[=\-_.\s─━═]+", body):
+                return "DIVIDER", body
             return tag, body if body and body.lower() not in ("none","null","n/a","-") else "—"
-        if len(line) >= 6 and re.fullmatch(r"[=\-_.\s]{6,}", line):
+        if len(line) >= 6 and re.fullmatch(r"[=\-_.\s─━═]+", line):
             return "DIVIDER", line
         if self._is_meter_line(line):
             return "METER", line.strip()
@@ -2102,6 +2136,11 @@ class MainWindow(QMainWindow):
 
         for line in lines:
             tag, body = self._classify_line(line)
+            
+            # Skip visual noise (empty logs)
+            if tag == "LOG" and body == "—":
+                continue
+                
             entering_table = (tag == "TABLE" and not in_table)
             leaving_table  = (tag != "TABLE" and in_table)
             if entering_table:

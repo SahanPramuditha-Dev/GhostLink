@@ -1482,9 +1482,9 @@ def _path_mtu_discovery(host: str = "8.8.8.8") -> Optional[int]:
                 return size + 28
     return None
 
-def _show_speed_test() -> None:
+def _show_speed_test():
     _section("🚀 Internet Speed Test", "6")
-
+    
     if _tool_exists("speedtest-cli"):
         print(f"  {C.DIM}Running speedtest-cli (this may take 30s)…{C.RESET}")
         r = _run(["speedtest-cli", "--simple"], timeout=60)
@@ -1495,6 +1495,7 @@ def _show_speed_test() -> None:
         else:
             print(f"  {C.YELLOW}speedtest-cli failed, falling back to HTTP test.{C.RESET}")
 
+    # Fallback: download test only
     print(f"  {C.DIM}Measuring download (1 MB)…{C.RESET}")
     url = "http://speedtest.tele2.net/1MB.zip"
     try:

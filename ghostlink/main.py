@@ -4,10 +4,9 @@ GHOSTLINK - Main Entry Point
 =============================
 Wi-Fi Security Testing Framework
 """
-
+import time
 import re
 import sys
-import time
 import argparse
 from dataclasses import dataclass
 from pathlib import Path

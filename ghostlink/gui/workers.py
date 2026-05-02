@@ -37,15 +37,12 @@ class AttackWorker(QThread):
         self.vault = PasswordVault(VAULT_PATH)
         self.vault.load()
         self.stop_requested = False
-        self._engine = None
         self._monitor_thread = None
         self._stop_monitor = threading.Event()
 
     def stop(self):
         self.stop_requested = True
         self._stop_monitor.set()
-        if self._engine is not None:
-            self._engine.request_stop()
 
     def run(self):
         # ---- calculate total search space ----
@@ -58,29 +55,24 @@ class AttackWorker(QThread):
             total = sum(len(charset) ** i for i in range(min_len, max_len + 1))
         self.attack_started.emit(total)
 
-        # ---- start a monitor thread that reads the shared state ----
+        # ---- monitor thread ----
         self._stop_monitor.clear()
         self._monitor_thread = threading.Thread(
             target=self._monitor_loop, daemon=True
         )
         self._monitor_thread.start()
 
-        # ---- run the attack ----
+        # ---- attack execution ----
         try:
-            self._engine = BruteForceEngine(self.config, self.vault)
-            if self.stop_requested:
-                self._engine.request_stop()
-            pwd, attempts, elapsed, verified = self._engine.execute()
+            engine = BruteForceEngine(self.config, self.vault)
+            pwd, attempts, elapsed, verified = engine.execute()
             self._stop_monitor.set()
             self.finished.emit(pwd or "", attempts, elapsed, verified)
         except Exception as e:
             self._stop_monitor.set()
             self.error.emit(str(e))
-        finally:
-            self._engine = None
 
     def _monitor_loop(self):
-        """Emit progress every 0.5 seconds using the global shared_state."""
         while not self._stop_monitor.is_set():
             with shared_state.lock:
                 pwd = shared_state.current_password or ""
@@ -112,11 +104,10 @@ class ReconWorker(QThread):
             captured = sys.stdout.getvalue()
             sys.stdout = old_stdout
             self.output.emit(captured)
-            self.finished.emit()
         except Exception as e:
             import traceback
             tb = traceback.format_exc()
             captured = sys.stdout.getvalue()
             sys.stdout = old_stdout
             self.output.emit(captured + f"\n--- ERROR ---\n{e}\n\n{tb}")
-            self.finished.emit()
+        self.finished.emit()

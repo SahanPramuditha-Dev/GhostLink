@@ -17,7 +17,7 @@ class Spinner:
         self.message = message
         self._stop = threading.Event()
         self._thread = None
-        self._chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        self._chars = ["|", "/", "-", "\\"]
     
     def start(self, message: str = None):
         """Start spinner animation"""
@@ -39,7 +39,7 @@ class Spinner:
         sys.stdout.write("\r" + " " * 80 + "\r")
         
         if final_message:
-            sys.stdout.write(f"{C.GHOST_CYAN}[✓]{C.RESET} {final_message}\n")
+            sys.stdout.write(f"{C.GHOST_CYAN}[+]{C.RESET} {final_message}\n")
         
         sys.stdout.flush()
     

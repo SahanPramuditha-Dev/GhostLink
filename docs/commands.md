@@ -1,57 +1,41 @@
-# GhostLink Command Reference
+# Important Commands
 
-## Run from Source
-
-GUI:
+## Build EXE (PyInstaller)
 
 ```powershell
-python run_gui.py
+pyinstaller `
+  --name="GHOSTLINK" `
+  --windowed `
+  --icon=ghostlink.ico `
+  --add-data="ghostlink;ghostlink" `
+  --add-data="ghostlink.ico;." `
+  --collect-all ghostlink `
+  --hidden-import=ctypes `
+  --hidden-import=html `
+  --hidden-import=platform `
+  --hidden-import=socket `
+  --hidden-import=subprocess `
+  --hidden-import=threading `
+  --hidden-import=json `
+  --hidden-import=urllib.request `
+  --hidden-import=urllib.error `
+  --hidden-import=ipaddress `
+  --hidden-import=dataclasses `
+  --hidden-import=collections `
+  --hidden-import=re `
+  --hidden-import=statistics `
+  --hidden-import=logging `
+  --hidden-import=tempfile `
+  --hidden-import=time `
+  --hidden-import=pathlib `
+  --hidden-import=typing `
+  --hidden-import=concurrent.futures `
+  --uac-admin `
+  run_gui.py
 ```
 
-CLI interactive:
+## Build Installer (NSIS)
 
 ```powershell
-python run.py
-```
-
-CLI direct mode example:
-
-```powershell
-python run.py --ssid "MyWiFi" --profile 1 --minlen 4 --maxlen 8 --threads 2
-```
-
-## Common CLI Arguments
-
-- `--ssid` target network SSID
-- `--interface` wireless interface (example: `wlan0`)
-- `--profile` built-in attack profile
-- `--charset` custom character set
-- `--minlen` minimum password length
-- `--maxlen` maximum password length
-- `--wordlist` path to wordlist file
-- `--threads` worker thread count
-- `--timeout` per-attempt timeout in seconds
-- `--use-cache` test cached password first
-- `--force` skip admin privilege check
-- `--debug` verbose output
-
-## Build and Install Commands
-
-Build app bundle:
-
-```powershell
-.\scripts\build.ps1
-```
-
-Build installer:
-
-```powershell
-.\scripts\installer.ps1
-```
-
-Manual equivalents:
-
-```powershell
-pyinstaller GHOSTLINK.spec
-makensis installer.nsi
+& "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
 ```
