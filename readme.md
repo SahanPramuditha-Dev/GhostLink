@@ -8,6 +8,8 @@ Use this project only on networks you own or have explicit permission to test.
 ## Interfaces
 GHOSTLINK currently provides both CLI and GUI workflows.
 
+> Run commands from the project root (the folder that contains `run.py`, `run_gui.py`, `requirements.txt`, and `ghostlink/`).
+
 ### GUI
 - Entry point: `run_gui.py`
 - Main window module: `ghostlink/gui/main_window.py`
@@ -19,21 +21,34 @@ Run GUI from source:
 python run_gui.py
 ```
 
+If you packaged the app, use the executable from `dist/GHOSTLINK/`.
+
 ### CLI
 - Entry point: `run.py`
 - Main logic: `ghostlink/main.py`
 
-Interactive mode:
+Get CLI help (all supported flags):
+
+```bash
+python run.py --help
+```
+
+Interactive mode (prompts you for configuration):
 
 ```bash
 python run.py
 ```
 
-CLI mode example:
+Non-interactive example (target + attack settings):
 
 ```bash
 python run.py --ssid "MyWiFi" --profile 1 --minlen 4 --maxlen 8 --threads 2
 ```
+
+Admin requirement:
+- The CLI checks for Administrator privileges.
+- Run as Administrator **or** pass `--force` (use with caution).
+
 
 ## Installation
 
@@ -49,7 +64,7 @@ cd GhostLink
 pip install -r requirements.txt
 ```
 
-Note: `requirements.txt` is currently a placeholder in this repo. Add or install required packages for your environment before running.
+Note: `requirements.txt` includes the current runtime dependencies. Some entries are optional (for extra dashboard and speed-test features), so you can trim them for minimal installs.
 
 ### Option 2: Portable packaged app (no installer)
 - Build output folder: `dist/GHOSTLINK/`
