@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.coverage
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Build and distribution artifacts
+build/
+dist/
+*.exe
+
+# GhostLink runtime/private state
+.ghostlink_vault.json
+.ghostlink_settings.json
+.ghostlink_state.json
+ghostlink_logs.json
+ghostlink_report.json
+ghostlink_reports.json
+logs/
+reports/
+recon_out.txt
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
