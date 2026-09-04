@@ -1,150 +1,151 @@
-﻿# GHOSTLINK
+# GHOSTLINK — Wi-Fi Security Assessment Framework
 
-Wi-Fi security testing framework for authorized lab and internal security assessment environments.
+GHOSTLINK is a Python-based desktop and command-line project for **authorized Wi-Fi security assessment, network reconnaissance, and defensive lab workflows**. It provides both GUI and CLI interfaces and can be packaged as a Windows desktop application.
 
-## Important Notice
-Use this project only on networks you own or have explicit permission to test.
+> **Authorized use only:** Use GHOSTLINK only on networks and devices you own or have explicit permission to assess.
+
+## Project Scope
+
+GHOSTLINK is intended for:
+
+- personal cybersecurity labs;
+- defensive Wi-Fi configuration review;
+- controlled classroom / coursework environments;
+- internal security assessments with explicit authorization;
+- learning about network-security tooling and application architecture.
+
+The public documentation intentionally avoids step-by-step offensive procedures or credential-attack instructions.
 
 ## Interfaces
-GHOSTLINK currently provides both CLI and GUI workflows.
 
-> Run commands from the project root (the folder that contains `run.py`, `run_gui.py`, `requirements.txt`, and `ghostlink/`).
+### Desktop GUI
 
-### GUI
 - Entry point: `run_gui.py`
-- Main window module: `ghostlink/gui/main_window.py`
-- UI tabs include scan, attack configuration, progress, and recon views.
+- Main window: `ghostlink/gui/main_window.py`
+- Provides visual workflows for scanning, reconnaissance, configuration, progress, and results.
 
-Run GUI from source:
+Run from source:
 
 ```bash
 python run_gui.py
 ```
 
-If you packaged the app, use the executable from `dist/GHOSTLINK/`.
+### Command-Line Interface
 
-### CLI
 - Entry point: `run.py`
-- Main logic: `ghostlink/main.py`
+- Core application logic: `ghostlink/main.py`
 
-Get CLI help (all supported flags):
+View supported commands and options:
 
 ```bash
 python run.py --help
 ```
 
-Interactive mode (prompts you for configuration):
+Interactive mode:
 
 ```bash
 python run.py
 ```
 
-Non-interactive example (target + attack settings):
-
-```bash
-python run.py --ssid "MyWiFi" --profile 1 --minlen 4 --maxlen 8 --threads 2
-```
-
-Admin requirement:
-- The CLI checks for Administrator privileges.
-- Run as Administrator **or** pass `--force` (use with caution).
-
+Some operating-system network operations may require elevated privileges. Use elevated access only when necessary and only in authorized environments.
 
 ## Installation
 
-### Option 1: Run from source
-1. Install Python 3.9+.
-2. Clone the repository.
-3. Install dependencies.
-4. Start with `python run_gui.py` (GUI) or `python run.py` (CLI).
+### Prerequisites
+
+- Python 3.9+
+- pip
+- Windows for the packaged desktop / installer workflow
+
+### Run From Source
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/SahanPramuditha-Dev/GhostLink.git
 cd GhostLink
 pip install -r requirements.txt
 ```
 
-Note: `requirements.txt` includes the current runtime dependencies. Some entries are optional (for extra dashboard and speed-test features), so you can trim them for minimal installs.
+Then launch either interface:
 
-### Option 2: Portable packaged app (no installer)
-- Build output folder: `dist/GHOSTLINK/`
-- Launch executable directly:
-
-```text
-dist/GHOSTLINK/GHOSTLINK.exe
+```bash
+python run_gui.py
 ```
 
-### Option 3: Windows installer
-- Installer file: `GHOSTLINK_Setup.exe`
-- Installs app to `Program Files\GHOSTLINK`
-- Creates desktop and Start Menu shortcuts
-- Registers uninstall entry in Windows
+or:
 
-## Setup and Build Files
-These files control packaging and installation:
+```bash
+python run.py
+```
 
-- `GHOSTLINK.spec`: PyInstaller definition used to package the GUI app (`run_gui.py`) into `dist/GHOSTLINK`.
-- `installer.nsi`: NSIS installer script used to generate `GHOSTLINK_Setup.exe` from `dist/GHOSTLINK`.
-- `ghostlink.ico`: App icon used in packaged builds.
-- `build/`: PyInstaller intermediate artifacts.
-- `dist/`: Final distributable output.
+## Windows Packaging
 
-Build and docs helpers:
+The repository includes packaging configuration for a distributable Windows application.
 
-- `scripts/build.ps1`: builds `dist/GHOSTLINK` from `GHOSTLINK.spec` (supports `-Clean`, `-InstallDeps`).
-- `scripts/installer.ps1`: builds `GHOSTLINK_Setup.exe` via NSIS (supports `-SkipBuild`).
-- `docs/build-guide.md`: full packaging and installer guide.
-- `docs/commands.md`: runtime and build command reference.
+### PyInstaller
 
-## Manual Build Steps
-If you want to regenerate installer files:
-
-1. Package app with PyInstaller:
+`GHOSTLINK.spec` defines the application bundle.
 
 ```bash
 pyinstaller GHOSTLINK.spec
 ```
 
-2. Build installer with NSIS:
+### NSIS Installer
+
+`installer.nsi` defines the Windows installer.
 
 ```bash
 makensis installer.nsi
 ```
 
-Output expected:
-- `dist/GHOSTLINK/GHOSTLINK.exe`
-- `GHOSTLINK_Setup.exe`
+Build outputs are expected under the repository's `dist/` / installer workflow.
 
-## Repository Layout (key parts)
+For more detail, see:
+
+- [Build Guide](docs/build-guide.md)
+- [Command Reference](docs/commands.md)
+
+## Repository Structure
 
 ```text
 ghostlink/
-  core/
-  engine/
-  network/
-  storage/
-  cli/
-  gui/
-  dashboard/
+├── core/         Core application functionality
+├── engine/       Assessment / processing engine
+├── network/      Network-facing modules
+├── storage/      Local storage and state
+├── cli/          Command-line interface
+├── gui/          Desktop graphical interface
+└── dashboard/    Dashboard-related components
 
-run.py
-run_gui.py
-GHOSTLINK.spec
-installer.nsi
-GHOSTLINK_Setup.exe
-dist/
-build/
+run.py            CLI entry point
+run_gui.py        GUI entry point
+GHOSTLINK.spec    PyInstaller configuration
+installer.nsi     NSIS installer configuration
+docs/             Build and command documentation
 ```
 
-## Security and Ethics
-Allowed:
-- personal lab testing
-- internal authorized assessments
-- educational security research
+## Security & Data Handling
 
-Not allowed:
-- unauthorized network access
-- testing public or third-party networks without permission
+Security tools can generate highly sensitive local data. Do not commit:
+
+- recovered or test passwords;
+- local credential vaults;
+- assessment exports containing private network information;
+- real SSIDs or private infrastructure details where disclosure is inappropriate;
+- logs containing secrets or personal information.
+
+Generated vault, report, log, build, and runtime artifacts should be excluded from source control where practical. If real credentials are ever committed to a public repository, rotate them and remove them from Git history rather than relying on deletion from the latest commit alone.
+
+## Ethical Use
+
+Appropriate use includes authorized testing, education, and defensive research. Unauthorized access, credential theft, disruption, or testing third-party networks without permission is outside the intended scope of this project.
+
+## Newer Desktop Architecture
+
+A newer Electron + React + FastAPI evolution of the project is available in:
+
+[GhostLink-React](https://github.com/SahanPramuditha-Dev/GhostLink-React)
 
 ## Author
-Sahan Pramuditha
+
+**Sahan Pramuditha**  
+BICT Undergraduate — University of Colombo
